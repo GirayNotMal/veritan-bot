@@ -15,8 +15,7 @@ FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 
 # En ucuz + en hızlı model: Claude Haiku 3.5
 # En az kotayı tüketen (mutlak en ucuz) alternatif: "claude-3-haiku-20240307"
-ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
-# Kısa yanıt = az token = az para + kısa ses dosyası
+ANTHROPIC_MODEL = "claude-haiku-4-5"# Kısa yanıt = az token = az para + kısa ses dosyası
 MAX_TOKENS = 200
 SYSTEM_PROMPT = (
     "Senin adın Veritan. Türkçe, kısa ve net cevap ver. "
