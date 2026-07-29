@@ -1,5 +1,4 @@
 import io
-import os
 import base64
 import discord
 from discord import app_commands
@@ -8,14 +7,14 @@ import anthropic
 import httpx
 
 # ================= KONFİGÜRASYON =================
-# ANAHTARLARI KODA YAZMA! Railway > Variables kısmına gir.
-DISCORD_TOKEN = os.environ["MTUzMDUyMTYyMDY3MjY3NTkwMg.G_rZRW.fs2sVW8KEkTEgMiAbpQAw49xMHEjJfjw8Z-lhQ"]
-ANTHROPIC_API_KEY = os.environ["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"]
-FISH_AUDIO_API_KEY = os.environ["1fa3d289065241dfa80c4b949041b43d"]
-FISH_REFERENCE_ID = os.environ["4538ecef264043b8b0e6d8e38606c4a7"]
+DISCORD_TOKEN = "MTUzMDUyMTYyMDY3MjY3NTkwMg.G_rZRW.fs2sVW8KEkTEgMiAbpQAw49xMHEjJfjw8Z-lhQ"
+ANTHROPIC_API_KEY = "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"
+FISH_AUDIO_API_KEY = "1fa3d289065241dfa80c4b949041b43d"
 
-# En ucuz + en hızlı model: Claude Haiku 3.5
-# En az kotayı tüketen (mutlak en ucuz) alternatif: "claude-3-haiku-20240307"
+# Fish Audio Reference ID
+FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
+
+# En ucuz + en hızlı model
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 # Kısa yanıt = az token = az para + kısa ses dosyası
