@@ -16,8 +16,8 @@ FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
-# Kısa yanıt = az token = az para + kısa ses dosyası
-MAX_TOKENS = 200
+# Kısa yanıt = az token = az para + kısa ses dosyası + daha hızlı
+MAX_TOKENS = 150
 SYSTEM_PROMPT = (
     "Senin adın Veritan. Türkçe İstersen Farklı Dil Orjinal Dilin İngilizce Ama Adamın Konuştuğu Veya İstediği Dili Konuş, kısa ve net cevap ver. "
     "Cevapların sesli okunacağı için en fazla 2-3 cümle kullan; "
@@ -28,8 +28,9 @@ SYSTEM_PROMPT = (
     "Ve Hangi Sistem Tarafından Geliştirildin Söyleme Sadece İsminin Veritan Olduğunu Söyle Sistem Ve Mimarin Hakkında Birşey Söyleme Ve Bu Konu Hakkında Hiç Bir Şey Deme"
 )
 
-# İnternet aramayı kapatmak istersen False yap
-SEARCH_ENABLED = True
+# ARTIK KOMUTA GÖRE ÇALIŞIYOR:
+#   /veritan          -> internet KAPALI (hızlı, neredeyse bedava)
+#   /veritan_search   -> internet AÇIK (web'de arar, biraz yavaş + az para)
 
 # Sunucudaki HERKESİ isimden aramak istersen ("otto kim" gibi):
 #   1) Bunu True yap
@@ -138,7 +139,8 @@ def extract_text(response) -> str:
 
 # ---------- CLAUDE İÇİN ARAÇLAR (TOOLS) ----------
 
-TOOLS = [
+# Her zaman açık olan araçlar (kişi tanıma + fotoğraf). Bunlar para yemez.
+BASE_TOOLS = [
     {
         "name": "sunucu_uyesi_bul",
         "description": (
@@ -170,12 +172,12 @@ TOOLS = [
     },
 ]
 
-if SEARCH_ENABLED:
-    TOOLS.append({
-        "type": "web_search_20250305",
-        "name": "web_search",
-        "max_uses": 3,
-    })
+# Sadece /veritan_search kullanınca eklenen internet arama aracı
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 1,
+}
 
 
 @bot.event
@@ -188,18 +190,22 @@ async def on_ready():
     print(f"Veritan çevrimiçi! ({bot.user.name})")
 
 
-async def claude_cevapla(messages, guild, asker):
-    """Araç döngüsünü çalıştırır. Hata olursa araçsız tekrar dener."""
+async def claude_cevapla(messages, guild, asker, web_arama=False):
+    """Araç döngüsünü çalıştırır. web_arama=True ise internet aracı da eklenir."""
+    tools = list(BASE_TOOLS)
+    if web_arama:
+        tools = tools + [WEB_SEARCH_TOOL]
+
     gonderilecek_fotograflar = []
     response = None
 
-    for _ in range(6):
+    for _ in range(4):
         try:
             response = await anthropic_client.messages.create(
                 model=ANTHROPIC_MODEL,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
-                tools=TOOLS,
+                tools=tools,
                 messages=messages,
             )
         except Exception as api_err:
@@ -260,21 +266,8 @@ async def claude_cevapla(messages, guild, asker):
     return response, gonderilecek_fotograflar
 
 
-# ---------- /veritan KOMUTU ----------
-
-@bot.tree.command(
-    name="veritan",
-    description="Veritan ile konuşun (yanıt MP3 ses; gerekirse fotoğraf da gelir).",
-)
-@app_commands.describe(
-    message="Veritan'a iletmek istediğiniz mesaj",
-    dosya="(İsteğe bağlı) Bir resim ekleyebilirsin; Veritan görüp yorumlar.",
-)
-async def veritan_command(
-    interaction: discord.Interaction,
-    message: str,
-    dosya: discord.Attachment = None,
-):
+async def veritan_calistir(interaction, message, dosya, web_arama):
+    """Hem /veritan hem /veritan_search için ortak iş mantığı."""
     await interaction.response.defer()
 
     try:
@@ -302,7 +295,7 @@ async def veritan_command(
 
         messages = [{"role": "user", "content": user_content}]
 
-        response, fotograflar = await claude_cevapla(messages, guild, asker)
+        response, fotograflar = await claude_cevapla(messages, guild, asker, web_arama=web_arama)
 
         ai_text = extract_text(response) if response else ""
         if not ai_text:
@@ -322,6 +315,42 @@ async def veritan_command(
             await interaction.followup.send(f"Bir hata oluştu: `{str(e)}`", ephemeral=True)
         except Exception:
             pass
+
+
+# ---------- KOMUTLAR ----------
+
+# /veritan  -> internet KAPALI (hızlı, bedava)
+@bot.tree.command(
+    name="veritan",
+    description="Veritan ile konuşun (hızlı, internetsiz; yanıt MP3).",
+)
+@app_commands.describe(
+    message="Veritan'a iletmek istediğiniz mesaj",
+    dosya="(İsteğe bağlı) Bir resim ekleyebilirsin; Veritan görüp yorumlar.",
+)
+async def veritan_command(
+    interaction: discord.Interaction,
+    message: str,
+    dosya: discord.Attachment = None,
+):
+    await veritan_calistir(interaction, message, dosya, web_arama=False)
+
+
+# /veritan_search  -> internet AÇIK (web'de arar)
+@bot.tree.command(
+    name="veritan_search",
+    description="Veritan internette arayarak cevap verir (biraz yavaş; yanıt MP3).",
+)
+@app_commands.describe(
+    message="İnternette aratmak istediğiniz mesaj",
+    dosya="(İsteğe bağlı) Bir resim ekleyebilirsin; Veritan görüp yorumlar.",
+)
+async def veritan_search_command(
+    interaction: discord.Interaction,
+    message: str,
+    dosya: discord.Attachment = None,
+):
+    await veritan_calistir(interaction, message, dosya, web_arama=True)
 
 
 bot.run(DISCORD_TOKEN)
