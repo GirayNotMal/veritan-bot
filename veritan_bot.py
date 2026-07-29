@@ -1,5 +1,7 @@
 import io
+import re
 import base64
+import traceback
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -10,11 +12,8 @@ import httpx
 DISCORD_TOKEN = "MTUzMDUyMTYyMDY3MjY3NTkwMg.G_rZRW.fs2sVW8KEkTEgMiAbpQAw49xMHEjJfjw8Z-lhQ"
 ANTHROPIC_API_KEY = "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"
 FISH_AUDIO_API_KEY = "1fa3d289065241dfa80c4b949041b43d"
-
-# Fish Audio Reference ID
 FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 
-# En ucuz + en hızlı model
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 # Kısa yanıt = az token = az para + kısa ses dosyası
@@ -31,13 +30,18 @@ SYSTEM_PROMPT = (
 
 # İnternet aramayı kapatmak istersen False yap
 SEARCH_ENABLED = True
+
+# Sunucudaki HERKESİ isimden aramak istersen ("otto kim" gibi):
+#   1) Bunu True yap
+#   2) Developer Portal > Bot > "Server Members Intent" AÇMAYI unutma
+# KAPALIYKEN bot ASLA çökmez; "ben kimim" ve etiketlenen (@kişi) yine çalışır.
+ENABLE_MEMBER_LOOKUP = False
 # =================================================
 
 # Discord Bot Kurulumu
-# members = True -> sunucudaki kişileri isimden bulabilmek için ŞART.
-# (Ayrıca Developer Portal > Bot > "Server Members Intent" AÇIK olmalı.)
 intents = discord.Intents.default()
-intents.members = True
+if ENABLE_MEMBER_LOOKUP:
+    intents.members = True  # DİKKAT: portalda da açık olmalı, yoksa bot açılmaz
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Anthropic Async İstemcisi
@@ -59,18 +63,31 @@ def describe_member(m) -> str:
         roller = [r.name for r in m.roles if r.name != "@everyone"]
         if roller:
             parts.append(f"Roller: {', '.join(roller)}")
-        durum = str(m.status) if m.status else "bilinmiyor"
-        parts.append(f"Durum: {durum}")
     parts.append(f"Hesap açıldı: {m.created_at:%d.%m.%Y}")
     return " | ".join(parts)
 
 
 async def uye_ara(guild, isim, asker, limit=5):
-    """İsimden sunucu üyesi arar. 'ben/kendim' -> soruyu soran kişi."""
-    if isim.lower().strip() in ("ben", "benim", "kendim", "ben kimim", "me", "kendi"):
+    """Kişi arar. 'ben' -> soran kişi; @etiket/ID -> o kişi; isim -> arama."""
+    isim = (isim or "").strip()
+    if isim.lower() in ("ben", "benim", "kendim", "ben kimim", "me", "kendi"):
         return [asker]
     if guild is None:
         return []
+
+    # Mesajda etiket/ID varsa (ör. <@123...> ya da düz ID)
+    m_id = re.search(r"\d{15,20}", isim)
+    if m_id:
+        uid = int(m_id.group())
+        member = guild.get_member(uid)
+        if member is None:
+            try:
+                member = await guild.fetch_member(uid)  # privileged intent gerekmez
+            except Exception:
+                member = None
+        return [member] if member else []
+
+    # İsimle arama (bu kısım "Server Members Intent" gerektirir)
     try:
         sonuc = await guild.query_members(query=isim, limit=limit)
     except Exception:
@@ -78,8 +95,8 @@ async def uye_ara(guild, isim, asker, limit=5):
     if not sonuc:
         dusuk = isim.lower()
         sonuc = [
-            m for m in guild.members
-            if dusuk in m.name.lower() or dusuk in m.display_name.lower()
+            mm for mm in guild.members
+            if dusuk in mm.name.lower() or dusuk in mm.display_name.lower()
         ][:limit]
     return sonuc
 
@@ -125,15 +142,14 @@ TOOLS = [
     {
         "name": "sunucu_uyesi_bul",
         "description": (
-            "Discord sunucusundaki bir kişiyi ismine veya takma adına göre arar ve "
-            "profil bilgilerini (ad, ID, roller, katılma tarihi vb.) döndürür. "
-            "'X kim', 'ben kimim', 'otto kimdir', 'şu kişinin profili' gibi sorularda kullan. "
-            "Kendisini soran kişi için isim olarak 'ben' yaz."
+            "Discord sunucusundaki bir kişiyi ismine/etiketine göre arar ve profil "
+            "bilgilerini döndürür. 'X kim', 'ben kimim', 'otto kimdir' gibi sorularda "
+            "kullan. Kişinin kendisi için isim olarak 'ben' yaz."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "isim": {"type": "string", "description": "Aranan kişinin ismi/takma adı. Kişinin kendisi için 'ben'."}
+                "isim": {"type": "string", "description": "Aranan kişi. Kendisi için 'ben'."}
             },
             "required": ["isim"],
         },
@@ -141,13 +157,13 @@ TOOLS = [
     {
         "name": "profil_fotografi_gonder",
         "description": (
-            "Belirtilen kişinin profil fotoğrafını Discord kanalına gönderilmek üzere işaretler. "
+            "Belirtilen kişinin profil fotoğrafını kanala gönderilmek üzere işaretler. "
             "Kullanıcı birinin fotoğrafını/avatarını istediğinde kullan."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "isim": {"type": "string", "description": "Fotoğrafı istenen kişinin ismi. Kendisi için 'ben'."}
+                "isim": {"type": "string", "description": "Fotoğrafı istenen kişi. Kendisi için 'ben'."}
             },
             "required": ["isim"],
         },
@@ -170,6 +186,78 @@ async def on_ready():
     except Exception as e:
         print(f"Komut senkronize hatası: {e}")
     print(f"Veritan çevrimiçi! ({bot.user.name})")
+
+
+async def claude_cevapla(messages, guild, asker):
+    """Araç döngüsünü çalıştırır. Hata olursa araçsız tekrar dener."""
+    gonderilecek_fotograflar = []
+    response = None
+
+    for _ in range(6):
+        try:
+            response = await anthropic_client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages,
+            )
+        except Exception as api_err:
+            # Araçlar/web arama bu modelde sorun çıkarırsa: araçsız dene
+            print("API hatasi, araclar olmadan tekrar deneniyor:", repr(api_err))
+            response = await anthropic_client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+            )
+            break
+
+        if response.stop_reason != "tool_use":
+            break
+
+        messages.append({"role": "assistant", "content": response.content})
+        tool_results = []
+
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+
+            if block.name == "sunucu_uyesi_bul":
+                isim = block.input.get("isim", "")
+                bulunanlar = await uye_ara(guild, isim, asker)
+                if bulunanlar:
+                    metin = "\n".join(describe_member(m) for m in bulunanlar)
+                else:
+                    metin = f"'{isim}' bulunamadi (isimle arama icin Server Members Intent gerekir)."
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": metin,
+                })
+
+            elif block.name == "profil_fotografi_gonder":
+                isim = block.input.get("isim", "")
+                bulunanlar = await uye_ara(guild, isim, asker, limit=1)
+                if bulunanlar:
+                    m = bulunanlar[0]
+                    try:
+                        foto = await avatar_indir(m)
+                        gonderilecek_fotograflar.append((f"{m.name}.png", foto))
+                        not_ = f"{m.display_name} profil fotografi gonderilecek."
+                    except Exception as e:
+                        not_ = f"Fotograf indirilemedi: {e}"
+                else:
+                    not_ = f"'{isim}' bulunamadi, fotograf gonderilemedi."
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": not_,
+                })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return response, gonderilecek_fotograflar
 
 
 # ---------- /veritan KOMUTU ----------
@@ -200,7 +288,6 @@ async def veritan_command(
         )
         user_content = [{"type": "text", "text": baglam}]
 
-        # Kullanıcı resim eklediyse Claude'un görmesi için ekle (vision)
         if dosya is not None and dosya.content_type and dosya.content_type.startswith("image/"):
             img_bytes = await dosya.read()
             user_content.append({
@@ -214,79 +301,27 @@ async def veritan_command(
             user_content.append({"type": "text", "text": "(Kullanıcı yukarıdaki resmi ekledi.)"})
 
         messages = [{"role": "user", "content": user_content}]
-        gonderilecek_fotograflar = []  # (dosya_adi, bytes)
 
-        # ----- Araç döngüsü (tool loop) -----
-        response = None
-        for _ in range(6):
-            response = await anthropic_client.messages.create(
-                model=ANTHROPIC_MODEL,
-                max_tokens=MAX_TOKENS,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=messages,
-            )
+        response, fotograflar = await claude_cevapla(messages, guild, asker)
 
-            if response.stop_reason != "tool_use":
-                break
-
-            messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
-
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
-
-                if block.name == "sunucu_uyesi_bul":
-                    isim = block.input.get("isim", "")
-                    bulunanlar = await uye_ara(guild, isim, asker)
-                    if bulunanlar:
-                        metin = "\n".join(describe_member(m) for m in bulunanlar)
-                    else:
-                        metin = f"'{isim}' adiyla eslesen kimse bulunamadi."
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": metin,
-                    })
-
-                elif block.name == "profil_fotografi_gonder":
-                    isim = block.input.get("isim", "")
-                    bulunanlar = await uye_ara(guild, isim, asker, limit=1)
-                    if bulunanlar:
-                        m = bulunanlar[0]
-                        try:
-                            foto = await avatar_indir(m)
-                            gonderilecek_fotograflar.append((f"{m.name}.png", foto))
-                            not_ = f"{m.display_name} adli kisinin profil fotografi gonderilecek."
-                        except Exception as e:
-                            not_ = f"Fotograf indirilemedi: {e}"
-                    else:
-                        not_ = f"'{isim}' bulunamadi, fotograf gonderilemedi."
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": not_,
-                    })
-
-            messages.append({"role": "user", "content": tool_results})
-
-        # ----- Metni sese çevir -----
         ai_text = extract_text(response) if response else ""
         if not ai_text:
             ai_text = "Üzgünüm, bir cevap üretemedim."
 
         audio_bytes = await generate_fish_audio(ai_text)
 
-        # ----- MP3 + varsa fotoğrafları gönder -----
         files = [discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
-        for fname, fbytes in gonderilecek_fotograflar:
+        for fname, fbytes in fotograflar:
             files.append(discord.File(io.BytesIO(fbytes), filename=fname))
 
         await interaction.followup.send(files=files)
 
     except Exception as e:
-        await interaction.followup.send(f"Bir hata oluştu: `{str(e)}`", ephemeral=True)
+        traceback.print_exc()  # gerçek hata Railway loglarına yazılır
+        try:
+            await interaction.followup.send(f"Bir hata oluştu: `{str(e)}`", ephemeral=True)
+        except Exception:
+            pass
 
 
 bot.run(DISCORD_TOKEN)
