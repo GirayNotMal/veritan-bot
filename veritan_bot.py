@@ -734,15 +734,20 @@ if VOICE_HAZIR:
 
         _orijinal_pop = _PD.pop_data
         _bozuk_sayaci = {"n": 0}
+        _basarili_sayaci = {"n": 0}
 
         def _guvenli_pop(self, *args, **kwargs):
             try:
-                return _orijinal_pop(self, *args, **kwargs)
+                sonuc = _orijinal_pop(self, *args, **kwargs)
+                if sonuc is not None:
+                    _basarili_sayaci["n"] += 1
+                    if _basarili_sayaci["n"] in (1, 5, 50) or _basarili_sayaci["n"] % 500 == 0:
+                        print(f"[SES][YAMA] PCM uretildi ve sink'e gidiyor (toplam {_basarili_sayaci['n']})")
+                return sonuc
             except _dopus.OpusError:
                 _bozuk_sayaci["n"] += 1
                 if _bozuk_sayaci["n"] in (1, 10, 100) or _bozuk_sayaci["n"] % 500 == 0:
-                    print(f"[SES][YAMA] Bozuk ses paketi atlandi (toplam {_bozuk_sayaci['n']}) "
-                          f"- dinleme DEVAM ediyor")
+                    print(f"[SES][YAMA] Bozuk ses paketi atlandi (toplam {_bozuk_sayaci['n']}) - dinleme DEVAM ediyor")
                 return None
             except Exception as e:
                 print("[SES][YAMA] Beklenmeyen decoder hatasi, paket atlandi:", repr(e))
@@ -1042,9 +1047,22 @@ if VOICE_HAZIR:
             return False  # PCM (48kHz stereo 16-bit)
 
         def write(self, user, data):
+            # TEŞHİS: write hic cagriliyor mu? (ilk birkac cagriyi mutlaka logla)
+            try:
+                if not hasattr(self, "_write_log_n"):
+                    self._write_log_n = 0
+                self._write_log_n += 1
+                if self._write_log_n in (1, 2, 3, 10, 50):
+                    print(f"[SES][SINK] write() cagrildi #{self._write_log_n} "
+                          f"user_tipi={type(user).__name__} user={user}")
+            except Exception:
+                pass
+
             if user is None:
                 return
-            # Bot kendi sesini dinlemesin (feedback / kendi TTS'ini yazmasin)
+            # user bazen SSRC (int) olabilir; User nesnesi degilse .id yoktur -> atla
+            if not hasattr(user, "id"):
+                return
             try:
                 if bot.user and user.id == bot.user.id:
                     return
@@ -1055,15 +1073,13 @@ if VOICE_HAZIR:
             if not pcm:
                 return
 
-            # TEŞHİS: her kullanicidan ilk ses geldiginde bir kez logla
             if user.id not in self._ilk_ses_loglandi:
                 self._ilk_ses_loglandi.add(user.id)
-                print(f"[SES][SINK] Ilk ses paketi geldi -> {user.display_name} ({user.id}), {len(pcm)} byte")
+                print(f"[SES][SINK] Ilk ses paketi geldi -> {getattr(user,'display_name',user.id)} ({user.id}), {len(pcm)} byte")
 
-            # Her ~200 pakette bir 'hala ses geliyor' logu (spam olmasin)
             self._paket_sayaci[user.id] = self._paket_sayaci.get(user.id, 0) + 1
             if self._paket_sayaci[user.id] % 250 == 0:
-                print(f"[SES][SINK] {user.display_name}: {self._paket_sayaci[user.id]} paket gonderildi")
+                print(f"[SES][SINK] {getattr(user,'display_name',user.id)}: {self._paket_sayaci[user.id]} paket")
 
             oturum = self.motor.oturumlar.get(user.id)
             if oturum is None:
