@@ -4,6 +4,7 @@ import os
 import json
 import base64
 import asyncio
+import threading
 import traceback
 from datetime import datetime, timedelta, timezone
 import discord
@@ -930,12 +931,23 @@ class VeritanSesMotoru:
         return cumle.strip()
 
     def oturum_ac_sync(self, kullanici):
-        """SENKRON: sink thread'inden cagrilir."""
-        if kullanici.id in self.oturumlar:
-            return self.oturumlar[kullanici.id]
+        """
+        Oturumu ANINDA kaydeder, Deepgram baglantisini ARKA PLAN thread'inde acar.
+        Boylece ses yonlendirici (router) thread'i asla bloklanmaz.
+        """
+        mevcut = self.oturumlar.get(kullanici.id)
+        if mevcut is not None:
+            return mevcut
+
         oturum = _DeepgramOturum(kullanici, self)
-        oturum.baslat()
-        self.oturumlar[kullanici.id] = oturum
+        self.oturumlar[kullanici.id] = oturum  # once kaydet (tekrar tekrar acilmasin)
+
+        t = threading.Thread(
+            target=oturum.baslat,
+            name=f"dg-start-{kullanici.id}",
+            daemon=True,
+        )
+        t.start()
         return oturum
 
     async def metin_geldi(self, kullanici, cumle):
@@ -1102,15 +1114,20 @@ async def veritan_katil(interaction: discord.Interaction):
         bot._veritan_motor = motor
         print(f"[SES] Dinleme basladi -> {kanal.name} ({kanal.id})")
 
-        # Kanalda halihazirda olan (bot haric) herkes icin Deepgram oturumunu onden ac
-        try:
-            for uye in kanal.members:
-                if bot.user and uye.id == bot.user.id:
-                    continue
-                motor.oturum_ac_sync(uye)
-            print(f"[SES] Onden acilan oturum sayisi: {len(motor.oturumlar)}")
-        except Exception as e:
-            print("[SES] Onden oturum acilamadi:", repr(e))
+        # Kanalda halihazirda olan (bot haric) herkes icin Deepgram oturumunu onden ac.
+        # ONEMLI: Deepgram start() SENKRON ve bloklayici -> ana event loop'ta CALISTIRMA,
+        # yoksa gateway heartbeat durur ("Shard stopped responding") ve komutlar 10062 verir.
+        async def _onden_oturumlari_ac():
+            try:
+                uyeler = [u for u in kanal.members if not (bot.user and u.id == bot.user.id)]
+                for uye in uyeler:
+                    await asyncio.to_thread(motor.oturum_ac_sync, uye)
+                print(f"[SES] Onden acilan oturum sayisi: {len(motor.oturumlar)}")
+            except Exception as e:
+                print("[SES] Onden oturum acilamadi:", repr(e))
+
+        # Arka planda calistir; komut cevabini bekletme
+        asyncio.create_task(_onden_oturumlari_ac())
 
         await interaction.followup.send(
             f"✅ Veritan **{kanal.name}** kanalına girdi ve dinlemede. "
