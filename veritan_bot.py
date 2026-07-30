@@ -1281,4 +1281,82 @@ async def _web_baslat():
 bot.setup_hook = _web_baslat
 # ==========================================================================
 
+# mms
+
+MM_DUYURU_METNI = "Sunucuya Üç Gün Birşey Olucak!"
+_MM_SES_CACHE = {}   # metin -> mp3 bytes (her seferinde Fish Audio'ya gitmesin)
+
+
+async def _mm_ses_al(metin: str) -> bytes:
+    if metin in _MM_SES_CACHE:
+        return _MM_SES_CACHE[metin]
+    ses = await generate_fish_audio(metin)
+    _MM_SES_CACHE[metin] = ses
+    return ses
+
+
+@bot.tree.command(
+    name="mm_veritan1",
+    description="(Sadece yetkili) Sabit duyuruyu ses kanalında seslendirir. Model kullanmaz.",
+)
+@app_commands.describe(tekrar="Kaç kez söylensin (varsayılan 3)")
+async def mm_veritan1(
+    interaction: discord.Interaction,
+    tekrar: app_commands.Range[int, 1, 5] = 3,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if not yetkili_mi(interaction.user):
+        await interaction.followup.send(
+            f"⛔ Sadece yetkili kullanabilir. (Sen → `{interaction.user.name}`, ID: `{interaction.user.id}`)",
+            ephemeral=True,
+        )
+        return
+
+    vc = interaction.guild.voice_client if interaction.guild else None
+    if vc is None or not vc.is_connected():
+        vc = _bagli_ses_client()
+    if vc is None:
+        await interaction.followup.send(
+            "⚠️ Veritan ses kanalında değil. Önce `/veritan_katil` çalıştır.",
+            ephemeral=True,
+        )
+        return
+
+    # Motor mesgul bayragini kaldir: duyuru sirasinda sesli mod araya girmesin
+    motor = getattr(bot, "_veritan_motor", None)
+    if motor is not None:
+        motor.mesgul = True
+
+    try:
+        ses = await _mm_ses_al(MM_DUYURU_METNI)
+        yol = f"/tmp/mm_veritan1_{datetime.now().timestamp()}.mp3"
+        with open(yol, "wb") as f:
+            f.write(ses)
+
+        for i in range(tekrar):
+            await _dosya_cal(vc, yol, sil=False)
+            if i < tekrar - 1:
+                await asyncio.sleep(0.4)
+
+        try:
+            os.remove(yol)
+        except Exception:
+            pass
+
+        print(f"[MM] Duyuru {tekrar} kez calindi -> {interaction.user}")
+        await interaction.followup.send(
+            f"✅ Duyuru **{tekrar}** kez seslendirildi:\n> {MM_DUYURU_METNI}",
+            ephemeral=True,
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        await interaction.followup.send(f"⚠️ Seslendirilemedi: `{e}`", ephemeral=True)
+
+    finally:
+        if motor is not None:
+            motor.mesgul = False
+# mmsa
+
 bot.run(DISCORD_TOKEN)
