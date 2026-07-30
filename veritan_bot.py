@@ -38,7 +38,7 @@ SYSTEM_PROMPT = (
 DAILY_LIMIT = 10.0        # Kişi başına günlük hak bakiyesi
 TOKEN_MALIYETI = 0.01     # 1 token = 0.01 hak (yani ~100 token = 1 hak)
 RESET_SAAT = 24           # Kaç saatte bir yenilenir
-OWNER_USERNAME = "ztar2907"  # Sadece bu username limit sıfırlayabilir
+OWNER_USERNAME = "ztar29073"  # Sadece bu username limit sıfırlayabilir
 LIMIT_FILE = "veritan_limits.json"
 
 # ARTIK KOMUTA GÖRE ÇALIŞIYOR:
