@@ -32,16 +32,23 @@ SYSTEM_PROMPT = (
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
-DAILY_LIMIT = 10.0        # Yeni kullanıcı için varsayılan günlük hak bakiyesi
-TOKEN_MALIYETI = 0.01     # 1 token = 0.01 hak (yani ~100 token = 1 hak)
-RESET_SAAT = 24           # Kaç saatte bir yenilenir
-OWNER_USERNAME = "ztar2907"  # Sadece bu username yönetici komutlarını çalıştırabilir
+DAILY_LIMIT = 10.0
+TOKEN_MALIYETI = 0.01
+RESET_SAAT = 24
 LIMIT_FILE = "veritan_limits.json"
 AYAR_FILE = "veritan_ayarlar.json"
 
-# Sunucudaki HERKESİ isimden aramak istersen ("otto kim" gibi):
-#   1) Bunu True yap
-#   2) Developer Portal > Bot > "Server Members Intent" AÇMAYI unutma
+# ---- YETKİ ----
+# Yönetici komutlarını (limitreset, whereisui) kimler kullanabilir?
+# 1) İsimle: kullanıcı adı, global ad veya görünen adı buna eşit olanlar (büyük/küçük fark etmez)
+OWNER_USERNAME = "ztar2907"
+# 2) EN KESİN yöntem: kendi Discord ID'ni buraya ekle. (Discord > Ayarlar > Gelişmiş > Geliştirici Modu AÇ,
+#    sonra kendine sağ tık > "Kullanıcı Kimliğini Kopyala") Örn: OWNER_IDS = {123456789012345678}
+OWNER_IDS = set()
+
+# Sunucudaki HERKESİ isimden aramak istersen ("otto kim"):
+#   ENABLE_MEMBER_LOOKUP = True YAP + Developer Portal > Bot > "Server Members Intent" AÇ.
+#   (Portalda açmazsan bot HİÇ AÇILMAZ.)
 ENABLE_MEMBER_LOOKUP = True
 # =================================================
 
@@ -55,8 +62,20 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 
+def yetkili_mi(user) -> bool:
+    """İsim (name/global_name/display_name) veya ID ile yetki kontrolü."""
+    if getattr(user, "id", None) in OWNER_IDS:
+        return True
+    hedef = OWNER_USERNAME.lower().strip()
+    for alan in ("name", "global_name", "display_name"):
+        deger = getattr(user, alan, None)
+        if deger and deger.lower().strip() == hedef:
+            return True
+    return False
+
+
 # ================= LİMİT SİSTEMİ =================
-_limits = {}  # user_id -> {"limit": float, "kalan": float, "reset_at": datetime}
+_limits = {}
 
 
 def _limit_kaydet():
@@ -116,7 +135,7 @@ def limit_resetle(user_id, yeni_limit):
 
 
 # ================= AYARLAR (UI KANALI) =================
-_ayarlar = {"ui_kanallar": {}}  # {guild_id(int): channel_id(int)}
+_ayarlar = {"ui_kanallar": {}}
 
 
 def _ayar_kaydet():
@@ -149,7 +168,6 @@ def ui_kanal_al(guild_id):
 
 
 def limit_embed(user, kalan, limit, reset_at, son_token=None, son_hak=None):
-    """Kullanıcının hak bakiyesini gösteren bar'lı UI kartı."""
     now = datetime.now(timezone.utc)
     toplam_sn = max(0, int((reset_at - now).total_seconds()))
     saat = toplam_sn // 3600
@@ -384,7 +402,6 @@ async def claude_cevapla(messages, guild, asker, web_arama=False):
 
 
 async def veritan_calistir(interaction, message, dosya, web_arama):
-    """Hem /veritan hem /veritan_search için ortak iş mantığı."""
     await interaction.response.defer()
     asker = interaction.user
 
@@ -448,6 +465,11 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
             kid = ui_kanal_al(guild.id)
             if kid:
                 hedef = bot.get_channel(kid)
+                if hedef is None:
+                    try:
+                        hedef = await bot.fetch_channel(kid)
+                    except Exception:
+                        hedef = None
         if hedef is not None:
             try:
                 await hedef.send(embed=embed)
@@ -484,7 +506,7 @@ async def veritan_search_command(interaction: discord.Interaction, message: str,
     await veritan_calistir(interaction, message, dosya, web_arama=True)
 
 
-# ---------- YÖNETİCİ KOMUTLARI (sadece OWNER_USERNAME) ----------
+# ---------- YÖNETİCİ KOMUTLARI ----------
 
 @bot.tree.command(
     name="limitresetveritan",
@@ -499,12 +521,18 @@ async def limitreset_command(
     kullanici: discord.Member,
     limit: app_commands.Range[float, 0.0, 1000000.0],
 ):
-    if interaction.user.name != OWNER_USERNAME:
-        await interaction.response.send_message("⛔ Bu komutu sadece yetkili kullanabilir.", ephemeral=True)
+    if not yetkili_mi(interaction.user):
+        await interaction.response.send_message(
+            f"⛔ Bu komutu sadece yetkili kullanabilir.\n"
+            f"(Bot seni şöyle görüyor → kullanıcı adı: `{interaction.user.name}`, ID: `{interaction.user.id}`. "
+            f"Yetkili değilsen koddaki OWNER_USERNAME'i bu kullanıcı adına ya da OWNER_IDS'e bu ID'yi ekle.)",
+            ephemeral=True,
+        )
         return
 
+    await interaction.response.defer()
     rec = limit_resetle(kullanici.id, limit)
-    await interaction.response.send_message(
+    await interaction.followup.send(
         content=f"✅ {kullanici.display_name} için hak bakiyesi **{float(limit):.2f}** olarak ayarlandı.",
         embed=limit_embed(kullanici, rec["kalan"], rec["limit"], rec["reset_at"]),
     )
@@ -516,8 +544,13 @@ async def limitreset_command(
 )
 @app_commands.describe(kanal="Kartların atılacağı metin kanalı")
 async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel):
-    if interaction.user.name != OWNER_USERNAME:
-        await interaction.response.send_message("⛔ Bu komutu sadece yetkili kullanabilir.", ephemeral=True)
+    if not yetkili_mi(interaction.user):
+        await interaction.response.send_message(
+            f"⛔ Bu komutu sadece yetkili kullanabilir.\n"
+            f"(Bot seni şöyle görüyor → kullanıcı adı: `{interaction.user.name}`, ID: `{interaction.user.id}`. "
+            f"Yetkili değilsen koddaki OWNER_USERNAME'i bu kullanıcı adına ya da OWNER_IDS'e bu ID'yi ekle.)",
+            ephemeral=True,
+        )
         return
     if interaction.guild is None:
         await interaction.response.send_message("Bu komut sadece sunucuda çalışır.", ephemeral=True)
