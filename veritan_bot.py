@@ -19,6 +19,11 @@ FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
+# >>> UI KANALI SABİT <<<
+# Bakiye/hak kartları HER ZAMAN bu kanala gider. Restart, redeploy, JSON silinmesi fark etmez.
+# İstediğin kanal ID'sini buraya yaz. 0 yaparsan eski davranışa (yazılan kanal / ayarlı kanal) döner.
+UI_CHANNEL_ID = 1532291499520164012
+
 # Kısa yanıt = az token = az para + kısa ses dosyası + daha hızlı
 MAX_TOKENS = 150
 SYSTEM_PROMPT = (
@@ -160,6 +165,9 @@ def ui_kanal_ayarla(guild_id, channel_id):
 
 
 def ui_kanal_al(guild_id):
+    # SABİT ID varsa her zaman onu kullan (restart/redeploy/JSON silinmesi fark etmez).
+    if UI_CHANNEL_ID:
+        return UI_CHANNEL_ID
     return _ayarlar["ui_kanallar"].get(guild_id)
 
 
@@ -340,6 +348,8 @@ async def on_ready():
     except Exception as e:
         print(f"Komut senkronize hatası: {e}")
     print(f"Veritan çevrimiçi! ({bot.user})")
+    if UI_CHANNEL_ID:
+        print(f"[UI kanal] SABİT ID kullaniliyor: {UI_CHANNEL_ID}")
 
 
 async def claude_cevapla(messages, guild, asker, web_arama=False):
@@ -470,30 +480,29 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
 
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
         gonderildi = False
-        if guild is not None:
-            kid = ui_kanal_al(guild.id)
-            print(f"[UI kanal] guild={guild.id} kayitli_kanal={kid}")
-            if kid:
-                hedef = bot.get_channel(kid)
-                if hedef is None:
+        kid = ui_kanal_al(guild.id if guild is not None else None)
+        print(f"[UI kanal] guild={guild.id if guild else None} kullanilan_kanal={kid}")
+        if kid:
+            hedef = bot.get_channel(kid)
+            if hedef is None:
+                try:
+                    hedef = await bot.fetch_channel(kid)
+                except Exception as e:
+                    print("UI kanal bulunamadi:", e)
+                    hedef = None
+            if hedef is not None:
+                try:
+                    await hedef.send(embed=embed)
+                    gonderildi = True
+                except Exception as e:
+                    print("UI kanala gonderilemedi:", e)
                     try:
-                        hedef = await bot.fetch_channel(kid)
-                    except Exception as e:
-                        print("UI kanal bulunamadi:", e)
-                        hedef = None
-                if hedef is not None:
-                    try:
-                        await hedef.send(embed=embed)
-                        gonderildi = True
-                    except Exception as e:
-                        print("UI kanala gonderilemedi:", e)
-                        try:
-                            await interaction.followup.send(
-                                f"⚠️ Hak kartı ayarlı kanala gönderilemedi (izin gerekebilir): `{e}`",
-                                ephemeral=True,
-                            )
-                        except Exception:
-                            pass
+                        await interaction.followup.send(
+                            f"⚠️ Hak kartı sabit kanala gönderilemedi (izin gerekebilir): `{e}`",
+                            ephemeral=True,
+                        )
+                    except Exception:
+                        pass
         if not gonderildi:
             await interaction.followup.send(embed=embed)
 
@@ -557,7 +566,7 @@ async def limitreset_command(
 
 @bot.tree.command(
     name="whereisuiveritan",
-    description="(Sadece yetkili) Bu komutu yazdığın kanalı, hak kartlarının atılacağı kanal yapar.",
+    description="(Sadece yetkili) UI kanalı SABİT olduğu için artık sadece bilgi verir.",
 )
 async def whereisui_command(interaction: discord.Interaction):
     # Önce ACK ver -> asla "uygulama yanıt vermedi" olmaz
@@ -569,11 +578,21 @@ async def whereisui_command(interaction: discord.Interaction):
             ephemeral=True,
         )
         return
+
+    if UI_CHANNEL_ID:
+        await interaction.followup.send(
+            f"ℹ️ UI kanalı **koda sabitlenmiş** durumda (ID: `{UI_CHANNEL_ID}`). "
+            f"Tüm hak kartları her zaman oraya gider; bu komutun artık bir etkisi yok. "
+            f"Değiştirmek için koddaki `UI_CHANNEL_ID` değerini düzenle.",
+            ephemeral=True,
+        )
+        return
+
     if interaction.guild is None:
         await interaction.followup.send("Bu komut sadece sunucuda çalışır.", ephemeral=True)
         return
 
-    hedef_kanal = interaction.channel  # komutun yazıldığı kanal (dönüştürme yok, hata olmaz)
+    hedef_kanal = interaction.channel
     ui_kanal_ayarla(interaction.guild.id, hedef_kanal.id)
     embed = discord.Embed(
         title="✅ UI Kanalı Ayarlandı",
@@ -581,11 +600,9 @@ async def whereisui_command(interaction: discord.Interaction):
         color=0x2ecc71,
     )
     try:
-        # Kanala GÖRÜNÜR bir kart at -> hem onay, hem izin testi
         await hedef_kanal.send(embed=embed)
         await interaction.followup.send(
-            f"✅ Ayarlandı. Kartlar {hedef_kanal.mention} kanalına gidecek.\n"
-            f"Test için **başka bir kanaldan** /veritan dene; kart buraya düşmeli.",
+            f"✅ Ayarlandı. Kartlar {hedef_kanal.mention} kanalına gidecek.",
             ephemeral=True,
         )
     except Exception as e:
