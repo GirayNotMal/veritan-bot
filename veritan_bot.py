@@ -1283,7 +1283,7 @@ bot.setup_hook = _web_baslat
 
 # mms
 
-MM_DUYURU_METNI = "Sunucuya Üç Gün Birşey Olucak!"
+MM_DUYURU_METNI = "[emphasis]Something Happen To Server In Three Days ... [long pause][emphasis] So Make New Server Vacant"
 _MM_SES_CACHE = {}   # metin -> mp3 bytes (her seferinde Fish Audio'ya gitmesin)
 
 
