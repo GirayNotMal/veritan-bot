@@ -21,7 +21,7 @@ FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 # ---- SESLİ MOD (Deepgram STT) ----
 DEEPGRAM_API_KEY = "930b9348e54538f6693e27f927341e4f80664486"
 # Veritan'ın oturacağı SES kanalı (/veritan_katil ile girer, /veritan_ayril ile çıkar)
-VOICE_CHANNEL_ID = 1532125424988197005
+VOICE_CHANNEL_ID = 1532326077773385868
 # Bu kelimelerden biri duyulunca Veritan uyanır / o kişiye odaklanır
 WAKE_WORDS = ("veritan", "verity", "verisan", "veri tan", "verittan")
 # Hazır MP3'lerin bulunduğu klasör (repoya koyacaksın)
@@ -36,7 +36,7 @@ ANTHROPIC_MODEL = "claude-haiku-4-5"
 # >>> UI KANALI SABİT <<<
 # Bakiye/hak kartları HER ZAMAN bu kanala gider. Restart, redeploy, JSON silinmesi fark etmez.
 # İstediğin kanal ID'sini buraya yaz. 0 yaparsan eski davranışa (yazılan kanal / ayarlı kanal) döner.
-UI_CHANNEL_ID = 1532291499520164012
+UI_CHANNEL_ID = 1532325961381580850
 
 # Kısa yanıt = az token = az para + kısa ses dosyası + daha hızlı
 MAX_TOKENS = 150
