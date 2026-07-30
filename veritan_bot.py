@@ -547,10 +547,9 @@ async def limitreset_command(
 
 @bot.tree.command(
     name="whereisuiveritan",
-    description="(Sadece yetkili) Hak kartlarının atılacağı kanalı ayarlar. Kanal seçmezsen bu kanalı seçer.",
+    description="(Sadece yetkili) Bu komutu yazdığın kanalı, hak kartlarının atılacağı kanal yapar.",
 )
-@app_commands.describe(kanal="(İsteğe bağlı) Kartların atılacağı kanal. Boş bırakırsan komutu yazdığın kanal seçilir.")
-async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel = None):
+async def whereisui_command(interaction: discord.Interaction):
     # Önce ACK ver -> asla "uygulama yanıt vermedi" olmaz
     await interaction.response.defer(ephemeral=True)
 
@@ -564,7 +563,7 @@ async def whereisui_command(interaction: discord.Interaction, kanal: discord.Tex
         await interaction.followup.send("Bu komut sadece sunucuda çalışır.", ephemeral=True)
         return
 
-    hedef_kanal = kanal or interaction.channel
+    hedef_kanal = interaction.channel  # komutun yazıldığı kanal (dönüştürme yok, hata olmaz)
     ui_kanal_ayarla(interaction.guild.id, hedef_kanal.id)
     embed = discord.Embed(
         title="✅ UI Kanalı Ayarlandı",
