@@ -44,7 +44,7 @@ AYAR_FILE = "veritan_ayarlar.json"
 OWNER_USERNAME = "ztar2907"
 # 2) EN KESİN yöntem: kendi Discord ID'ni buraya ekle. (Discord > Ayarlar > Gelişmiş > Geliştirici Modu AÇ,
 #    sonra kendine sağ tık > "Kullanıcı Kimliğini Kopyala") Örn: OWNER_IDS = {123456789012345678}
-OWNER_IDS = set()
+OWNER_IDS = {1062095020703879218}
 
 # Sunucudaki HERKESİ isimden aramak istersen ("otto kim"):
 #   ENABLE_MEMBER_LOOKUP = True YAP + Developer Portal > Bot > "Server Members Intent" AÇ.
@@ -544,8 +544,11 @@ async def limitreset_command(
 )
 @app_commands.describe(kanal="Kartların atılacağı metin kanalı")
 async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel):
+    # Önce ACK ver (3 sn kuralı) -> "uygulama yanıt vermedi" olmaz
+    await interaction.response.defer(ephemeral=True)
+
     if not yetkili_mi(interaction.user):
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"⛔ Bu komutu sadece yetkili kullanabilir.\n"
             f"(Bot seni şöyle görüyor → kullanıcı adı: `{interaction.user.name}`, ID: `{interaction.user.id}`. "
             f"Yetkili değilsen koddaki OWNER_USERNAME'i bu kullanıcı adına ya da OWNER_IDS'e bu ID'yi ekle.)",
@@ -553,14 +556,16 @@ async def whereisui_command(interaction: discord.Interaction, kanal: discord.Tex
         )
         return
     if interaction.guild is None:
-        await interaction.response.send_message("Bu komut sadece sunucuda çalışır.", ephemeral=True)
+        await interaction.followup.send("Bu komut sadece sunucuda çalışır.", ephemeral=True)
         return
 
     ui_kanal_ayarla(interaction.guild.id, kanal.id)
-    await interaction.response.send_message(
-        f"✅ Bakiye/hak kartları artık {kanal.mention} kanalına gönderilecek.",
-        ephemeral=True,
+    embed = discord.Embed(
+        title="✅ UI Kanalı Ayarlandı",
+        description=f"Buraya seçildi: {kanal.mention}\n\nBundan sonra tüm bakiye/hak kartları bu kanala atılacak. 🎫",
+        color=0x2ecc71,
     )
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 bot.run(DISCORD_TOKEN)
