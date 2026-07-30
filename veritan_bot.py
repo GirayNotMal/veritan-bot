@@ -491,7 +491,17 @@ async def claude_cevapla(messages, guild, asker, web_arama=False, system=SYSTEM_
 
 
 async def veritan_calistir(interaction, message, dosya, web_arama):
-    await interaction.response.defer()
+    # Discord 3 saniyeden fazla beklerse interaction olur (10062 Unknown interaction).
+    # Defer basarisiz olursa komutu sessizce birak, cokme.
+    try:
+        await interaction.response.defer()
+    except discord.NotFound:
+        print("[UYARI] Interaction zaman asimina ugradi (10062), komut atlandi.")
+        return
+    except Exception as e:
+        print("[UYARI] defer hatasi:", repr(e))
+        return
+
     asker = interaction.user
 
     kalan, limit, reset_at, izin = limit_kontrol(asker.id)
@@ -539,15 +549,17 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         maliyet = uretilen_token * TOKEN_MALIYETI
         yeni_kalan = limit_harca(asker.id, maliyet)
 
-        # --- YENI: Bu komut, botun bulundugu SES kanalinin metin sohbetinden mi yazildi? ---
-        # Evetse cevabi MP3 dosyasi yerine CANLI ses kanalinda oynat.
+        # --- Bu komut SADECE botun bulundugu SES KANALININ kendi sohbetinden mi yazildi? ---
+        # Sadece o durumda cevap CANLI seste oynar. Diger tum kanallarda normal MP3 dosyasi gider.
         vc = guild.voice_client if guild else None
+        kanal_id = interaction.channel.id if interaction.channel else None
         ses_kanalinin_sohbeti = (
             vc is not None
             and vc.is_connected()
-            and interaction.channel is not None
-            and interaction.channel.id == VOICE_CHANNEL_ID
+            and kanal_id == VOICE_CHANNEL_ID
         )
+        print(f"[SES] /komut kanal={kanal_id} hedef_ses_kanali={VOICE_CHANNEL_ID} "
+              f"bot_seste={bool(vc and vc.is_connected())} -> canli_ses={ses_kanalinin_sohbeti}")
 
         if ses_kanalinin_sohbeti:
             # Fotograf varsa yine de yaz (sesle gonderilemez)
@@ -706,6 +718,39 @@ except Exception as _e:
     VOICE_HAZIR = False
     VOICE_IMPORT_HATASI = _e
     print("[SES] Sesli mod kutuphaneleri yuklenemedi:", repr(_e))
+
+
+# ==========================================================================
+# KRITIK YAMA: "OpusError: corrupted stream" router thread'ini olduruyor.
+# Tek bir bozuk ses paketi geldiginde voice_recv'in PacketRouter thread'i
+# cokuyor ve O ANDAN SONRA HIC SES ISLENMIYOR (write() bir daha cagrilmiyor).
+# Bu yama bozuk paketi sessizce atlar, thread yasamaya devam eder.
+# ==========================================================================
+if VOICE_HAZIR:
+    try:
+        from discord.ext.voice_recv.opus import PacketDecoder as _PD
+        import discord.opus as _dopus
+
+        _orijinal_pop = _PD.pop_data
+        _bozuk_sayaci = {"n": 0}
+
+        def _guvenli_pop(self, *args, **kwargs):
+            try:
+                return _orijinal_pop(self, *args, **kwargs)
+            except _dopus.OpusError:
+                _bozuk_sayaci["n"] += 1
+                if _bozuk_sayaci["n"] in (1, 10, 100) or _bozuk_sayaci["n"] % 500 == 0:
+                    print(f"[SES][YAMA] Bozuk ses paketi atlandi (toplam {_bozuk_sayaci['n']}) "
+                          f"- dinleme DEVAM ediyor")
+                return None
+            except Exception as e:
+                print("[SES][YAMA] Beklenmeyen decoder hatasi, paket atlandi:", repr(e))
+                return None
+
+        _PD.pop_data = _guvenli_pop
+        print("[SES][YAMA] Opus decoder koruma yamasi aktif (corrupted stream artik oldurmez).")
+    except Exception as _pe:
+        print("[SES][YAMA] Yama uygulanamadi:", repr(_pe))
 
 
 async def _seslendir_ve_cal(voice_client, text: str):
