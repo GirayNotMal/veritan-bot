@@ -32,18 +32,12 @@ SYSTEM_PROMPT = (
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
-# Hak artık tam sayı "soru" değil, ONDALIKLI bir bakiye.
-# Üretilen her token TOKEN_MALIYETI kadar hak yer. (Düşünme/reasoning tokenları da dahil.)
-# Cevap ne kadar uzunsa o kadar çok hak düşer.
-DAILY_LIMIT = 10.0        # Kişi başına günlük hak bakiyesi
+DAILY_LIMIT = 10.0        # Yeni kullanıcı için varsayılan günlük hak bakiyesi
 TOKEN_MALIYETI = 0.01     # 1 token = 0.01 hak (yani ~100 token = 1 hak)
 RESET_SAAT = 24           # Kaç saatte bir yenilenir
-OWNER_USERNAME = "ztar2907"  # Sadece bu username limit sıfırlayabilir
+OWNER_USERNAME = "ztar2907"  # Sadece bu username yönetici komutlarını çalıştırabilir
 LIMIT_FILE = "veritan_limits.json"
-
-# ARTIK KOMUTA GÖRE ÇALIŞIYOR:
-#   /veritan          -> internet KAPALI (hızlı, neredeyse bedava)
-#   /veritan_search   -> internet AÇIK (web'de arar, biraz yavaş + az para)
+AYAR_FILE = "veritan_ayarlar.json"
 
 # Sunucudaki HERKESİ isimden aramak istersen ("otto kim" gibi):
 #   1) Bunu True yap
@@ -93,7 +87,6 @@ def _limit_yukle():
 
 
 def _kayit_al(user_id):
-    """Kaydı getirir; süresi dolduysa yeniler."""
     now = datetime.now(timezone.utc)
     rec = _limits.get(user_id)
     if rec is None or now >= rec["reset_at"]:
@@ -103,13 +96,11 @@ def _kayit_al(user_id):
 
 
 def limit_kontrol(user_id):
-    """Bakiyeyi getirir (düşürmez). (kalan, limit, reset_at, izin_var_mi)."""
     rec = _kayit_al(user_id)
     return rec["kalan"], rec["limit"], rec["reset_at"], rec["kalan"] > 0
 
 
 def limit_harca(user_id, miktar):
-    """Cevap sonrası token maliyetini bakiyeden düşer. Yeni kalanı döndürür."""
     rec = _kayit_al(user_id)
     rec["kalan"] = max(0.0, rec["kalan"] - miktar)
     _limit_kaydet()
@@ -122,6 +113,39 @@ def limit_resetle(user_id, yeni_limit):
     _limits[user_id] = {"limit": yeni_limit, "kalan": yeni_limit, "reset_at": now + timedelta(hours=RESET_SAAT)}
     _limit_kaydet()
     return _limits[user_id]
+
+
+# ================= AYARLAR (UI KANALI) =================
+_ayarlar = {"ui_kanallar": {}}  # {guild_id(int): channel_id(int)}
+
+
+def _ayar_kaydet():
+    try:
+        data = {"ui_kanallar": {str(g): c for g, c in _ayarlar["ui_kanallar"].items()}}
+        with open(AYAR_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print("Ayar kaydedilemedi:", e)
+
+
+def _ayar_yukle():
+    try:
+        if os.path.exists(AYAR_FILE):
+            with open(AYAR_FILE) as f:
+                data = json.load(f)
+            for g, c in data.get("ui_kanallar", {}).items():
+                _ayarlar["ui_kanallar"][int(g)] = int(c)
+    except Exception as e:
+        print("Ayar yuklenemedi:", e)
+
+
+def ui_kanal_ayarla(guild_id, channel_id):
+    _ayarlar["ui_kanallar"][guild_id] = channel_id
+    _ayar_kaydet()
+
+
+def ui_kanal_al(guild_id):
+    return _ayarlar["ui_kanallar"].get(guild_id)
 
 
 def limit_embed(user, kalan, limit, reset_at, son_token=None, son_hak=None):
@@ -230,11 +254,9 @@ def extract_text(response) -> str:
 
 
 def _usage_output(response) -> int:
-    """Bir yanıttan üretilen (output + varsa reasoning) token sayısını alır."""
     try:
         u = response.usage
         toplam = getattr(u, "output_tokens", 0) or 0
-        # bazı modellerde ayrı reasoning/thinking sayacı olabilir
         for alan in ("reasoning_tokens", "thinking_tokens"):
             toplam += getattr(u, alan, 0) or 0
         return int(toplam)
@@ -282,6 +304,7 @@ WEB_SEARCH_TOOL = {
 @bot.event
 async def on_ready():
     _limit_yukle()
+    _ayar_yukle()
     try:
         synced = await bot.tree.sync()
         print(f"{len(synced)} slash komutu senkronize edildi.")
@@ -291,7 +314,6 @@ async def on_ready():
 
 
 async def claude_cevapla(messages, guild, asker, web_arama=False):
-    """Araç döngüsü. (response, fotograflar, uretilen_token) döndürür."""
     tools = list(BASE_TOOLS)
     if web_arama:
         tools = tools + [WEB_SEARCH_TOOL]
@@ -366,7 +388,6 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
     await interaction.response.defer()
     asker = interaction.user
 
-    # ----- BAKİYE KONTROLÜ (API çağrısından ÖNCE) -----
     kalan, limit, reset_at, izin = limit_kontrol(asker.id)
     if not izin:
         await interaction.followup.send(
@@ -385,7 +406,6 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         )
         user_content = [{"type": "text", "text": baglam}]
 
-        # Dosya eklendiyse
         if dosya is not None:
             ctype = dosya.content_type or ""
             if ctype.startswith("image/"):
@@ -410,25 +430,33 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         if not ai_text:
             ai_text = "Üzgünüm, bir cevap üretemedim."
 
-        # ----- TOKEN BAZLI MALİYET: cevap uzadıkça hak azalır -----
         maliyet = uretilen_token * TOKEN_MALIYETI
         yeni_kalan = limit_harca(asker.id, maliyet)
 
         audio_bytes = await generate_fish_audio(ai_text)
 
-        # 1) MP3 (+ varsa profil fotoğrafları)
+        # 1) MP3 (+ varsa profil fotoğrafları) -> komutun yazıldığı kanala
         files = [discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
         for fname, fbytes in fotograflar:
             files.append(discord.File(io.BytesIO(fbytes), filename=fname))
         await interaction.followup.send(files=files)
 
-        # 2) MP3'ten sonra: harcanan token + kalan bakiye kartı
-        await interaction.followup.send(
-            embed=limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
-        )
+        # 2) Bakiye kartı -> ayarlı UI kanalı varsa oraya, yoksa buraya
+        embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
+        hedef = None
+        if guild is not None:
+            kid = ui_kanal_al(guild.id)
+            if kid:
+                hedef = bot.get_channel(kid)
+        if hedef is not None:
+            try:
+                await hedef.send(embed=embed)
+            except Exception:
+                await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(embed=embed)
 
     except Exception as e:
-        # Hata olduysa henüz düşüş yapılmadı (düşüş cevaptan sonra), iade gerekmez
         traceback.print_exc()
         try:
             await interaction.followup.send(f"Bir hata oluştu: `{str(e)}`", ephemeral=True)
@@ -436,7 +464,7 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
             pass
 
 
-# ---------- KOMUTLAR ----------
+# ---------- KULLANICI KOMUTLARI ----------
 
 @bot.tree.command(name="veritan", description="Veritan ile konuşun (hızlı, internetsiz; yanıt MP3).")
 @app_commands.describe(
@@ -456,26 +484,49 @@ async def veritan_search_command(interaction: discord.Interaction, message: str,
     await veritan_calistir(interaction, message, dosya, web_arama=True)
 
 
+# ---------- YÖNETİCİ KOMUTLARI (sadece OWNER_USERNAME) ----------
+
 @bot.tree.command(
     name="limitresetveritan",
-    description="(Sadece yetkili) Bir kullanıcının hak bakiyesini sıfırlar/belirler.",
+    description="(Sadece yetkili) Bir kullanıcının hak bakiyesini istediğin değere ayarlar.",
 )
 @app_commands.describe(
     kullanici="Bakiyesi ayarlanacak kişi",
-    limit="Verilecek hak (ör. 10)",
+    limit="Verilecek hak miktarı (ondalık olabilir, sınır yok: 5, 25, 0.5, 100...)",
 )
-async def limitreset_command(interaction: discord.Interaction, kullanici: discord.Member, limit: int):
+async def limitreset_command(
+    interaction: discord.Interaction,
+    kullanici: discord.Member,
+    limit: app_commands.Range[float, 0.0, 1000000.0],
+):
     if interaction.user.name != OWNER_USERNAME:
         await interaction.response.send_message("⛔ Bu komutu sadece yetkili kullanabilir.", ephemeral=True)
         return
-
-    if limit < 0:
-        limit = 0
 
     rec = limit_resetle(kullanici.id, limit)
     await interaction.response.send_message(
         content=f"✅ {kullanici.display_name} için hak bakiyesi **{float(limit):.2f}** olarak ayarlandı.",
         embed=limit_embed(kullanici, rec["kalan"], rec["limit"], rec["reset_at"]),
+    )
+
+
+@bot.tree.command(
+    name="whereisuiveritan",
+    description="(Sadece yetkili) Bakiye/hak kartlarının gönderileceği kanalı seçer.",
+)
+@app_commands.describe(kanal="Kartların atılacağı metin kanalı")
+async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel):
+    if interaction.user.name != OWNER_USERNAME:
+        await interaction.response.send_message("⛔ Bu komutu sadece yetkili kullanabilir.", ephemeral=True)
+        return
+    if interaction.guild is None:
+        await interaction.response.send_message("Bu komut sadece sunucuda çalışır.", ephemeral=True)
+        return
+
+    ui_kanal_ayarla(interaction.guild.id, kanal.id)
+    await interaction.response.send_message(
+        f"✅ Bakiye/hak kartları artık {kanal.mention} kanalına gönderilecek.",
+        ephemeral=True,
     )
 
 
