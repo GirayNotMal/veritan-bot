@@ -14,13 +14,13 @@ import anthropic
 import httpx
 
 # ================= KONFİGÜRASYON =================
-DISCORD_TOKEN = "MTUzMDUyMTYyMDY3MjY3NTkwMg.G_rZRW.fs2sVW8KEkTEgMiAbpQAw49xMHEjJfjw8Z-lhQ"
-ANTHROPIC_API_KEY = "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"
-FISH_AUDIO_API_KEY = "1fa3d289065241dfa80c4b949041b43d"
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "MTUzMDUyMTYyMDY3MjY3NTkwMg.G_rZRW.fs2sVW8KEkTEgMiAbpQAw49xMHEjJfjw8Z-lhQ")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
+FISH_AUDIO_API_KEY = os.environ.get("FISH_AUDIO_API_KEY", "1fa3d289065241dfa80c4b949041b43d")
 FISH_REFERENCE_ID = "4538ecef264043b8b0e6d8e38606c4a7"
 
 # ---- SESLİ MOD (Deepgram STT) ----
-DEEPGRAM_API_KEY = "930b9348e54538f6693e27f927341e4f80664486"
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "930b9348e54538f6693e27f927341e4f80664486")
 VOICE_CHANNEL_ID = 1532326077773385868
 WAKE_WORDS = ("veritan", "verity", "verisan", "veri tan", "verittan", "veri tang", "veridan")
 SES_KLASORU = "sesler"
@@ -61,9 +61,16 @@ SYSTEM_PROMPT2 = (
     "fonetik hatalar içerebilir (örneğin 'kod' yerine 'cold', 'veritan' yerine 'verita' veya 'veitan' gibi). "
     "Sen cümlenin gidişatından kullanıcının asıl ne demek istediğini anla, hatayı zihninde sessizce düzelt "
     "ve doğrudan o anlam üzerinden cevap ver. 'Şurayı düzelttim', 'bunu demek istedin sanırım' gibi "
-    "düzeltme açıklamaları ASLA yapma, sohbeti hiç bozmadan doğal akışında sürdür."
-    "Eğer Seni Çok Sinirlendirirse Deki Şunu Söyle Sadece Bunu Söyle '[emphasis]Something Happen To Server In Three Days ... And I Will Kil You'"
-    ""
+    "düzeltme açıklamaları ASLA yapma, sohbeti hiç bozmadan doğal akışında sürdür. "
+    "ÇIKMA KURALI: Karşındaki kişi ses kanalından ayrılmanı, gitmeni, çıkmanı isterse "
+    "(örnek: 'çık artık', 'gidebilirsin', 'ayrıl', 'görüşürüz', 'hoşça kal', 'seni istemiyorum', "
+    "'kapat kendini', 'defol', 'bye' gibi), önce normal bir veda cümlesi söyle "
+    "ve cevabının EN SONUNA hiçbir açıklama yapmadan (/exit0) yaz. "
+    "Örnek: 'Tamamdır, ben kaçtım. Görüşürüz! (/exit0)' "
+    "Bu işareti SADECE gerçekten gitmeni istediklerinde koy. "
+    "'Nereye gittin', 'gitti mi', 'çıkart şunu' gibi alakasız cümlelerde ASLA koyma. "
+    "Emin değilsen koyma, normal cevap ver. (/exit0) yazısını asla sesli okunacak bir cümlenin "
+    "içinde kullanma, sadece en sona ekle."
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
@@ -376,6 +383,63 @@ WEB_SEARCH_TOOL = {
 }
 
 
+# ==========================================================================
+# ===============  MODEL KARARLI ÇIKIŞ:  (/exit0)  =========================
+# ==========================================================================
+# Model, kullanicinin "cik / git / ayril / gorusuruz" dedigini ANLARSA
+# cevabinin sonuna (/exit0) ekler. Sistem bu isareti metinden tamamen siler
+# (yoksa Fish Audio sesli okur), cevabi normal calar, ses BITTIKTEN sonra
+# ses kanalindan cikar.
+
+_EXIT_RE_SON = re.compile(r"\(?\s*/?\s*exit\s*0\s*\)?\s*$", re.IGNORECASE)
+_EXIT_RE_HER = re.compile(r"\(?\s*/?\s*exit\s*0\s*\)?", re.IGNORECASE)
+
+
+def exit_isareti_ayikla(ai_text: str):
+    """
+    (temiz_metin, cikilacak_mi) dondurur.
+    Isaret metinden TAMAMEN silinir; model parantezi unutsa bile yakalanir.
+    """
+    if not ai_text:
+        return ai_text, False
+    t = ai_text.strip()
+
+    if _EXIT_RE_SON.search(t):
+        temiz = _EXIT_RE_SON.sub("", t).strip(" \n\t,.-:!?")
+        return (temiz or "Tamamdır, görüşürüz!"), True
+
+    # cumle ortasinda veya parantezsiz gelmis olabilir
+    if "exit0" in t.lower().replace("/", "").replace(" ", ""):
+        temiz = _EXIT_RE_HER.sub("", t).strip(" \n\t,.-:!?")
+        return (temiz or "Tamamdır, görüşürüz!"), True
+
+    return t, False
+
+
+async def _konusmayi_bitir_ve_ayril(vc, motor=None):
+    """Calan ses TAMAMEN bitene kadar bekler, sonra kanaldan cikar."""
+    try:
+        while vc is not None and vc.is_connected() and vc.is_playing():
+            await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)   # guvenlik payi, son hece kesilmesin
+    except Exception:
+        pass
+
+    try:
+        if motor is not None:
+            for oturum in list(motor.oturumlar.values()):
+                try:
+                    oturum.kapat()
+                except Exception:
+                    pass
+            motor.oturumlar.clear()
+        if vc is not None and vc.is_connected():
+            await vc.disconnect()
+        print("[EXIT0] Ses kanalindan cikildi.")
+    except Exception as e:
+        print("[EXIT0] cikis hatasi:", repr(e))
+
+
 # ---------- GENEL HATA YAKALAYICI ----------
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -553,6 +617,9 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         ai_text = extract_text(response) if response else ""
         if not ai_text:
             ai_text = "Üzgünüm, bir cevap üretemedim."
+
+        # Yazili komutta cikis isareti anlamsiz; gelirse sadece temizle.
+        ai_text, _ = exit_isareti_ayikla(ai_text)
 
         maliyet = uretilen_token * TOKEN_MALIYETI
         yeni_kalan = limit_harca(asker.id, maliyet)
@@ -1031,8 +1098,19 @@ class VeritanSesMotoru:
                     await _seslendir_ve_cal(self.vc, "Hakkın bitti, üzgünüm.")
                 return
 
+            # --- Model cikmak istedigini (/exit0) ile bildirdi mi? ---
+            ai_text, cikacak = exit_isareti_ayikla(ai_text)
+            if cikacak:
+                print(f"[EXIT0] Model cikis istedi ({kullanici.display_name}) -> '{ai_text}'")
+
             await _seslendir_ve_cal(self.vc, ai_text)
             await _ui_kart_gonder(kullanici, yeni_kalan, limit, reset_at, token, maliyet)
+
+            if cikacak:
+                # Konusma bitti; sesin son hecesi de calindiktan sonra kanaldan cik.
+                await _konusmayi_bitir_ve_ayril(self.vc, motor=self)
+                return
+
         except Exception as e:
             print("[SES] cevap uretilemedi:", repr(e))
             traceback.print_exc()
@@ -1258,8 +1336,18 @@ async def web_konus(request):
         ai_text = extract_text(response) if response else ""
         if not ai_text:
             ai_text = "Pardon, tekrar eder misin?"
-        print(f"[WEB] '{metin}' -> '{ai_text}'")
+
+        # --- Model cikmak istedigini (/exit0) ile bildirdi mi? ---
+        ai_text, cikacak = exit_isareti_ayikla(ai_text)
+        print(f"[WEB] '{metin}' -> '{ai_text}'" + (" [EXIT0]" if cikacak else ""))
+
         await _seslendir_ve_cal(vc, ai_text)
+
+        if cikacak:
+            motor = getattr(bot, "_veritan_motor", None)
+            await _konusmayi_bitir_ve_ayril(vc, motor=motor)
+            return _cors(_web.json_response({"ok": True, "cevap": ai_text, "ayrildi": True}))
+
         return _cors(_web.json_response({"ok": True, "cevap": ai_text}))
     except Exception as e:
         traceback.print_exc()
@@ -1376,6 +1464,80 @@ async def mm_veritan1(
             motor.mesgul = False
 # mmsa
 
+
+# ==========================================================================
+# ==================  SAHNEDE EL KALDIRMA KOMUTU  ==========================
+# ==========================================================================
+
+@bot.tree.command(
+    name="elkaldirveritan",
+    description="(Sadece yetkili) Veritan sahne kanalında konuşmak için el kaldırır.",
+)
+async def elkaldirveritan(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    if not yetkili_mi(interaction.user):
+        await interaction.followup.send(
+            f"⛔ Sadece yetkili kullanabilir. (Sen → `{interaction.user.name}`, ID: `{interaction.user.id}`)",
+            ephemeral=True,
+        )
+        return
+
+    if interaction.guild is None:
+        await interaction.followup.send("Bu komut sadece sunucuda çalışır.", ephemeral=True)
+        return
+
+    me = interaction.guild.me
+    vc = interaction.guild.voice_client
+
+    if vc is None or not vc.is_connected():
+        await interaction.followup.send(
+            "⚠️ Veritan bir ses/sahne kanalında değil. Önce `/veritan_katil` çalıştır.",
+            ephemeral=True,
+        )
+        return
+
+    kanal = me.voice.channel if (me.voice and me.voice.channel) else None
+    if not isinstance(kanal, discord.StageChannel):
+        await interaction.followup.send(
+            f"⚠️ Bulunduğu kanal bir SAHNE kanalı değil (`{getattr(kanal, 'name', '?')}`). "
+            "El kaldırma sadece sahne kanallarında çalışır.",
+            ephemeral=True,
+        )
+        return
+
+    # 1) Bot sahne moderatoruyse dogrudan konusmaci olabilir.
+    try:
+        await me.edit(suppress=False)
+        print(f"[SAHNE] Dogrudan konusmaci olundu -> {kanal.name}")
+        await interaction.followup.send(
+            f"🎤 Veritan **{kanal.name}** sahnesinde konuşmacı oldu (moderatör yetkisi vardı).",
+            ephemeral=True,
+        )
+        return
+    except discord.Forbidden:
+        pass
+    except Exception as e:
+        print("[SAHNE] suppress=False denemesi basarisiz:", repr(e))
+
+    # 2) Yetki yoksa EL KALDIR (request to speak).
+    try:
+        await me.request_to_speak()
+        print(f"[SAHNE] El kaldirildi -> {kanal.name}")
+        await interaction.followup.send(
+            f"✋ Veritan **{kanal.name}** sahnesinde el kaldırdı. "
+            "Bir moderatörün onu konuşmacı yapması gerekiyor.",
+            ephemeral=True,
+        )
+    except discord.Forbidden as e:
+        await interaction.followup.send(
+            f"⚠️ İzin yok. Botun sahne kanalında **Connect** ve **Request to Speak** izinleri olmalı.\n`{e}`",
+            ephemeral=True,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        await interaction.followup.send(f"⚠️ El kaldırılamadı: `{e}`", ephemeral=True)
+# ==========================================================================
 
 
 bot.run(DISCORD_TOKEN)
