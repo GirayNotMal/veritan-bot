@@ -42,7 +42,7 @@ AYAR_FILE = "veritan_ayarlar.json"
 # Sunucudaki HERKESİ isimden aramak istersen ("otto kim" gibi):
 #   1) Bunu True yap
 #   2) Developer Portal > Bot > "Server Members Intent" AÇMAYI unutma
-ENABLE_MEMBER_LOOKUP = False
+ENABLE_MEMBER_LOOKUP = True
 # =================================================
 
 # Discord Bot Kurulumu
