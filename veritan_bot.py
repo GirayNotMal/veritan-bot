@@ -186,6 +186,36 @@ def ui_kanal_al(guild_id):
     return _ayarlar["ui_kanallar"].get(guild_id)
 
 
+async def _ui_kart_garanti_gonder(embed):
+    """
+    Hak kartini SADECE sabit UI kanalina atar. Basarisizsa 2 kez daha dener.
+    (gonderildi: bool, hata_sebebi: str|None) dondurur.
+    Sabit kanal ayarliyken kart baska yere ASLA dusmez.
+    """
+    kid = ui_kanal_al(None)
+    if not kid:
+        return False, "UI kanal ID tanimli degil."
+
+    son_hata = None
+    for deneme in range(3):
+        try:
+            hedef = bot.get_channel(kid)
+            if hedef is None:
+                hedef = await bot.fetch_channel(kid)
+            await hedef.send(embed=embed)
+            print(f"[UI kanal] Kart gonderildi -> #{getattr(hedef,'name',kid)} (deneme {deneme+1})")
+            return True, None
+        except discord.Forbidden as e:
+            son_hata = f"Botun bu kanala YAZMA/EMBED izni yok (ID: {kid}). {e}"
+            print("[UI kanal] Forbidden:", repr(e))
+            break  # izin sorunu, tekrar denemek anlamsiz
+        except Exception as e:
+            son_hata = f"Kanal bulunamadi/gonderilemedi (ID: {kid}). {e}"
+            print(f"[UI kanal] deneme {deneme+1} hata:", repr(e))
+            await asyncio.sleep(1)
+    return False, son_hata
+
+
 def limit_embed(user, kalan, limit, reset_at, son_token=None, son_hak=None):
     now = datetime.now(timezone.utc)
     toplam_sn = max(0, int((reset_at - now).total_seconds()))
@@ -509,51 +539,55 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         maliyet = uretilen_token * TOKEN_MALIYETI
         yeni_kalan = limit_harca(asker.id, maliyet)
 
-        audio_bytes = await generate_fish_audio(ai_text)
+        # --- YENI: Bu komut, botun bulundugu SES kanalinin metin sohbetinden mi yazildi? ---
+        # Evetse cevabi MP3 dosyasi yerine CANLI ses kanalinda oynat.
+        vc = guild.voice_client if guild else None
+        ses_kanalinin_sohbeti = (
+            vc is not None
+            and vc.is_connected()
+            and interaction.channel is not None
+            and interaction.channel.id == VOICE_CHANNEL_ID
+        )
 
-        files = [discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
-        for fname, fbytes in fotograflar:
-            files.append(discord.File(io.BytesIO(fbytes), filename=fname))
-        await interaction.followup.send(files=files)
+        if ses_kanalinin_sohbeti:
+            # Fotograf varsa yine de yaz (sesle gonderilemez)
+            files = []
+            for fname, fbytes in fotograflar:
+                files.append(discord.File(io.BytesIO(fbytes), filename=fname))
+            if files:
+                await interaction.followup.send(content="🔊 Cevap ses kanalında oynatılıyor...", files=files)
+            else:
+                await interaction.followup.send(content="🔊 Cevap ses kanalında oynatılıyor...")
+            try:
+                await _seslendir_ve_cal(vc, ai_text)
+            except Exception as e:
+                print("[SES] metin-sohbet -> ses oynatma hatasi:", repr(e))
+                # Ses calinamadiysa en azindan MP3 dosyasi olarak dus
+                audio_bytes = await generate_fish_audio(ai_text)
+                await interaction.followup.send(
+                    files=[discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
+                )
+        else:
+            audio_bytes = await generate_fish_audio(ai_text)
+            files = [discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
+            for fname, fbytes in fotograflar:
+                files.append(discord.File(io.BytesIO(fbytes), filename=fname))
+            await interaction.followup.send(files=files)
 
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
-        gonderildi = False
-        hata_sebebi = None
-        kid = ui_kanal_al(guild.id if guild is not None else None)
-        print(f"[UI kanal] guild={guild.id if guild else None} kullanilan_kanal={kid}")
-
-        if kid:
-            hedef = bot.get_channel(kid)
-            if hedef is None:
-                try:
-                    hedef = await bot.fetch_channel(kid)
-                except Exception as e:
-                    hata_sebebi = f"Kanal bulunamadi (ID: {kid}). Detay: {e}"
-                    print("[UI kanal] fetch hatasi:", repr(e))
-                    hedef = None
-
-            if hedef is not None:
-                try:
-                    await hedef.send(embed=embed)
-                    gonderildi = True
-                    print(f"[UI kanal] Kart gonderildi -> #{getattr(hedef, 'name', kid)}")
-                except discord.Forbidden as e:
-                    hata_sebebi = f"Botun bu kanala YAZMA izni yok. Detay: {e}"
-                    print("[UI kanal] Forbidden:", repr(e))
-                except Exception as e:
-                    hata_sebebi = f"Beklenmeyen hata: {e}"
-                    print("[UI kanal] send hatasi:", repr(e))
+        # UI kartini GARANTI sabit kanala at; sabit kanal varsa ASLA yazilan kanala dusme.
+        gonderildi, hata_sebebi = await _ui_kart_garanti_gonder(embed)
 
         if not gonderildi:
-            if hata_sebebi:
-                try:
-                    await interaction.followup.send(
-                        f"⚠️ Hak kartı sabit kanala ({kid}) gönderilemedi.\n**Sebep:** {hata_sebebi}",
-                        ephemeral=True,
-                    )
-                except Exception:
-                    pass
-            await interaction.followup.send(embed=embed)
+            # Sadece hata varsa yetkiliye GIZLI uyari (herkese gorunmez, kanala dusmez)
+            try:
+                await interaction.followup.send(
+                    f"⚠️ Hak kartı sabit UI kanalına gönderilemedi.\n**Sebep:** {hata_sebebi}",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+            # NOT: Sabit kanal ayarliyken karti bilerek yazilan kanala ATMIYORUZ (istegin bu).
 
     except Exception as e:
         traceback.print_exc()
@@ -737,16 +771,10 @@ async def _sesli_cevap_uret(kullanici, metin, guild):
 
 
 async def _ui_kart_gonder(kullanici, yeni_kalan, limit, reset_at, token, maliyet):
-    try:
-        embed = limit_embed(kullanici, yeni_kalan, limit, reset_at, son_token=token, son_hak=maliyet)
-        kid = ui_kanal_al(None)
-        if not kid:
-            return
-        hedef = bot.get_channel(kid) or await bot.fetch_channel(kid)
-        if hedef is not None:
-            await hedef.send(embed=embed)
-    except Exception as e:
-        print("[SES][UI kanal] kart gonderilemedi:", repr(e))
+    embed = limit_embed(kullanici, yeni_kalan, limit, reset_at, son_token=token, son_hak=maliyet)
+    gonderildi, hata = await _ui_kart_garanti_gonder(embed)
+    if not gonderildi:
+        print("[SES][UI kanal] kart gonderilemedi:", hata)
 
 
 # ---- Deepgram canli dinleyici (kisi basina) — SENKRON websocket ----
@@ -782,10 +810,22 @@ class _DeepgramOturum:
                     print("[SES] transcript aktarilamadi:", repr(e))
 
             def on_error(_self, error, **kwargs):
-                print(f"[SES] Deepgram hata ({self.kullanici}):", error)
+                print(f"[SES] Deepgram HATA ({self.kullanici.display_name}):", error)
+
+            def on_open(_self, *a, **k):
+                print(f"[SES] Deepgram baglanti ACILDI ({self.kullanici.display_name})")
+
+            def on_close(_self, *a, **k):
+                print(f"[SES] Deepgram baglanti KAPANDI ({self.kullanici.display_name})")
+                self.aktif = False
 
             self.dg_conn.on(LiveTranscriptionEvents.Transcript, on_message)
             self.dg_conn.on(LiveTranscriptionEvents.Error, on_error)
+            try:
+                self.dg_conn.on(LiveTranscriptionEvents.Open, on_open)
+                self.dg_conn.on(LiveTranscriptionEvents.Close, on_close)
+            except Exception:
+                pass
 
             opts = LiveOptions(
                 model="nova-2",
@@ -855,26 +895,41 @@ class VeritanSesMotoru:
 
     async def metin_geldi(self, kullanici, cumle):
         print(f"[SES] TRANSCRIPT ({kullanici.display_name}): {cumle}")
-        if self.mesgul:
-            return
 
         oturum = self.oturumlar.get(kullanici.id)
         wake = self._wake_var_mi(cumle)
 
+        # Veritan su an konusuyor/cevapliyorsa:
+        # - Sadece ODAKLANDIGI kisi disindakileri yok say.
+        # - Odakli kisi tekrar 'veritan' derse yine de siraya girmesin (mesgulken bekle).
+        if self.mesgul:
+            print(f"[SES] mesgul, simdilik yok sayildi ({kullanici.display_name})")
+            return
+
+        # Cok kisi var: birisi uyandirdiysa Veritan O kisiye odaklanir.
         if oturum and oturum.uyanik:
-            if oturum.uyanma_zamani and (datetime.now() - oturum.uyanma_zamani).total_seconds() > DINLEME_PENCERESI_SN:
+            gecti = (datetime.now() - oturum.uyanma_zamani).total_seconds() if oturum.uyanma_zamani else 999
+            if gecti > DINLEME_PENCERESI_SN:
                 oturum.uyanik = False
+                print(f"[SES] {kullanici.display_name} icin dinleme penceresi doldu")
+                # pencere doldu ama bu cumlede yine wake varsa asagida yakalanir
             else:
                 oturum.uyanik = False
-                await self._cevapla(kullanici, self._wake_temizle(cumle) if wake else cumle)
+                soru = self._wake_temizle(cumle) if wake else cumle
+                print(f"[SES] Odakli cevap -> {kullanici.display_name}: {soru}")
+                await self._cevapla(kullanici, soru)
                 return
 
         if wake:
             kalan_metin = self._wake_temizle(cumle)
+            self.aktif_konusan = kullanici.id
             if kalan_metin:
+                # "veritan ...soru..." tek seferde
+                print(f"[SES] Wake+soru -> {kullanici.display_name}: {kalan_metin}")
                 await self._cevapla(kullanici, kalan_metin)
             else:
-                self.aktif_konusan = kullanici.id
+                # sadece "veritan" -> dinliyorum cal, soruyu bekle
+                print(f"[SES] Wake (sadece isim) -> {kullanici.display_name}, dinliyorum calinacak")
                 if oturum:
                     oturum.uyanik = True
                     oturum.uyanma_zamani = datetime.now()
@@ -923,6 +978,8 @@ if VOICE_HAZIR:
         def __init__(self, motor):
             super().__init__()
             self.motor = motor
+            self._ilk_ses_loglandi = set()   # user_id -> ilk ses geldi mi
+            self._paket_sayaci = {}
 
         def wants_opus(self) -> bool:
             return False  # PCM (48kHz stereo 16-bit)
@@ -930,10 +987,31 @@ if VOICE_HAZIR:
         def write(self, user, data):
             if user is None:
                 return
+            # Bot kendi sesini dinlemesin (feedback / kendi TTS'ini yazmasin)
+            try:
+                if bot.user and user.id == bot.user.id:
+                    return
+            except Exception:
+                pass
+
+            pcm = getattr(data, "pcm", None)
+            if not pcm:
+                return
+
+            # TEŞHİS: her kullanicidan ilk ses geldiginde bir kez logla
+            if user.id not in self._ilk_ses_loglandi:
+                self._ilk_ses_loglandi.add(user.id)
+                print(f"[SES][SINK] Ilk ses paketi geldi -> {user.display_name} ({user.id}), {len(pcm)} byte")
+
+            # Her ~200 pakette bir 'hala ses geliyor' logu (spam olmasin)
+            self._paket_sayaci[user.id] = self._paket_sayaci.get(user.id, 0) + 1
+            if self._paket_sayaci[user.id] % 250 == 0:
+                print(f"[SES][SINK] {user.display_name}: {self._paket_sayaci[user.id]} paket gonderildi")
+
             oturum = self.motor.oturumlar.get(user.id)
             if oturum is None:
                 oturum = self.motor.oturum_ac_sync(user)
-            oturum.ses_gonder(data.pcm)
+            oturum.ses_gonder(pcm)
 
         def cleanup(self):
             pass
@@ -977,9 +1055,22 @@ async def veritan_katil(interaction: discord.Interaction):
         motor = VeritanSesMotoru(vc, interaction.guild)
         vc.listen(VeritanSink(motor))
         bot._veritan_motor = motor
+        print(f"[SES] Dinleme basladi -> {kanal.name} ({kanal.id})")
+
+        # Kanalda halihazirda olan (bot haric) herkes icin Deepgram oturumunu onden ac
+        try:
+            for uye in kanal.members:
+                if bot.user and uye.id == bot.user.id:
+                    continue
+                motor.oturum_ac_sync(uye)
+            print(f"[SES] Onden acilan oturum sayisi: {len(motor.oturumlar)}")
+        except Exception as e:
+            print("[SES] Onden oturum acilamadi:", repr(e))
+
         await interaction.followup.send(
             f"✅ Veritan **{kanal.name}** kanalına girdi ve dinlemede. "
-            f"'veritan' de, seni dinlesin. 🎙️",
+            f"'veritan' de, seni dinlesin. 🎙️\n"
+            f"(Loglarda `[SES][SINK] Ilk ses paketi` görmüyorsan mikrofon sesi bota ulaşmıyor demektir.)",
             ephemeral=True,
         )
     except Exception as e:
