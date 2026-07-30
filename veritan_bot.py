@@ -1176,5 +1176,104 @@ async def veritan_ayril(interaction: discord.Interaction):
     else:
         await interaction.followup.send("ℹ️ Veritan zaten ses kanalında değil.", ephemeral=True)
 
+# ==========================================================================
+# ===================  WEB SUNUCUSU (HTML KÖPRÜSÜ)  ========================
+# ==========================================================================
+# verity.html buraya baglanir: mikrofon -> Deepgram (tarayicida) -> yazi ->
+# buraya POST -> Claude -> Fish Audio -> Discord ses kanalinda calar. HARCAMA YOK.
+# Railway > Settings > Networking > Generate Domain acik olmali.
+
+from aiohttp import web as _web
+
+WEB_PORT = int(os.environ.get("PORT", "8080"))
+
+
+def _cors(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+    return resp
+
+
+def _bagli_ses_client():
+    for g in bot.guilds:
+        vc = g.voice_client
+        if vc and vc.is_connected():
+            return vc
+    return None
+
+
+async def web_saglik(request):
+    return _cors(_web.json_response({"ok": True, "mesaj": "Veritan web ayakta"}))
+
+
+async def web_options(request):
+    return _cors(_web.Response(text=""))
+
+
+async def web_dinliyorum(request):
+    vc = _bagli_ses_client()
+    if vc is None:
+        return _cors(_web.json_response({"ok": False, "hata": "bot seste degil"}, status=409))
+    try:
+        if os.path.exists(MP3_DINLIYORUM):
+            await _dosya_cal(vc, MP3_DINLIYORUM, sil=False)
+        else:
+            await _seslendir_ve_cal(vc, "Seni dinliyorum.")
+        return _cors(_web.json_response({"ok": True}))
+    except Exception as e:
+        traceback.print_exc()
+        return _cors(_web.json_response({"ok": False, "hata": str(e)}, status=500))
+
+
+async def web_konus(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return _cors(_web.json_response({"ok": False, "hata": "gecersiz json"}, status=400))
+
+    metin = (data.get("text") or "").strip()
+    if not metin:
+        return _cors(_web.json_response({"ok": False, "hata": "bos metin"}, status=400))
+
+    vc = _bagli_ses_client()
+    if vc is None:
+        return _cors(_web.json_response(
+            {"ok": False, "hata": "Bot ses kanalinda degil. Once /veritan_katil calistir."},
+            status=409))
+
+    try:
+        messages = [{"role": "user", "content": [{"type": "text",
+            "text": f"[Ortam] Sesli sohbet. Kisinin soyledigi: {metin}"}]}]
+        response, _f, _t = await claude_cevapla(
+            messages, None, None, web_arama=False, system=SYSTEM_PROMPT2
+        )
+        ai_text = extract_text(response) if response else ""
+        if not ai_text:
+            ai_text = "Pardon, tekrar eder misin?"
+        print(f"[WEB] '{metin}' -> '{ai_text}'")
+        await _seslendir_ve_cal(vc, ai_text)
+        return _cors(_web.json_response({"ok": True, "cevap": ai_text}))
+    except Exception as e:
+        traceback.print_exc()
+        return _cors(_web.json_response({"ok": False, "hata": str(e)}, status=500))
+
+
+async def _web_baslat():
+    app = _web.Application()
+    app.router.add_get("/", web_saglik)
+    app.router.add_post("/konus", web_konus)
+    app.router.add_post("/dinliyorum", web_dinliyorum)
+    app.router.add_route("OPTIONS", "/konus", web_options)
+    app.router.add_route("OPTIONS", "/dinliyorum", web_options)
+    runner = _web.AppRunner(app)
+    await runner.setup()
+    site = _web.TCPSite(runner, "0.0.0.0", WEB_PORT)
+    await site.start()
+    print(f"[WEB] Sunucu ayakta: 0.0.0.0:{WEB_PORT}")
+
+
+bot.setup_hook = _web_baslat
+# ==========================================================================
 
 bot.run(DISCORD_TOKEN)
