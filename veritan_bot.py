@@ -39,17 +39,14 @@ LIMIT_FILE = "veritan_limits.json"
 AYAR_FILE = "veritan_ayarlar.json"
 
 # ---- YETKİ ----
-# Yönetici komutlarını (limitreset, whereisui) kimler kullanabilir?
-# 1) İsimle: kullanıcı adı, global ad veya görünen adı buna eşit olanlar (büyük/küçük fark etmez)
 OWNER_USERNAME = "ztar2907"
-# 2) EN KESİN yöntem: kendi Discord ID'ni buraya ekle. (Discord > Ayarlar > Gelişmiş > Geliştirici Modu AÇ,
-#    sonra kendine sağ tık > "Kullanıcı Kimliğini Kopyala") Örn: OWNER_IDS = {123456789012345678}
 OWNER_IDS = {1062095020703879218}
 
-# Sunucudaki HERKESİ isimden aramak istersen ("otto kim"):
-#   ENABLE_MEMBER_LOOKUP = True YAP + Developer Portal > Bot > "Server Members Intent" AÇ.
-#   (Portalda açmazsan bot HİÇ AÇILMAZ.)
-ENABLE_MEMBER_LOOKUP = True
+# Sunucudaki HERKESİ İSİMLE aramak istersen ("otto kim"):
+#   ENABLE_MEMBER_LOOKUP = True YAP  *VE*  Developer Portal > Bot > "Server Members Intent" AÇ.
+#   İKİSİNİ BİRDEN yapmazsan bot AÇILMAZ ve her komut "uygulama yanıt vermedi" verir.
+#   FALSE iken bot HER ZAMAN açılır; "ben kimim", @etiket ve ID ile kişi bulma yine çalışır.
+ENABLE_MEMBER_LOOKUP = False
 # =================================================
 
 # Discord Bot Kurulumu
@@ -63,7 +60,6 @@ anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 
 def yetkili_mi(user) -> bool:
-    """İsim (name/global_name/display_name) veya ID ile yetki kontrolü."""
     if getattr(user, "id", None) in OWNER_IDS:
         return True
     hedef = OWNER_USERNAME.lower().strip()
@@ -319,16 +315,31 @@ WEB_SEARCH_TOOL = {
 }
 
 
+# ---------- GENEL HATA YAKALAYICI ----------
+# Herhangi bir komut çökse bile "uygulama yanıt vermedi" yerine gerçek hatayı gösterir.
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    traceback.print_exception(type(error), error, error.__traceback__)
+    mesaj = f"⚠️ Komut çalışırken hata: `{error}`"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(mesaj, ephemeral=True)
+        else:
+            await interaction.response.send_message(mesaj, ephemeral=True)
+    except Exception:
+        pass
+
+
 @bot.event
 async def on_ready():
     _limit_yukle()
     _ayar_yukle()
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} slash komutu senkronize edildi.")
+        print(f"{len(synced)} slash komutu senkronize edildi: {[c.name for c in synced]}")
     except Exception as e:
         print(f"Komut senkronize hatası: {e}")
-    print(f"Veritan çevrimiçi! ({bot.user.name})")
+    print(f"Veritan çevrimiçi! ({bot.user})")
 
 
 async def claude_cevapla(messages, guild, asker, web_arama=False):
@@ -378,7 +389,7 @@ async def claude_cevapla(messages, guild, asker, web_arama=False):
                 if bulunanlar:
                     metin = "\n".join(describe_member(m) for m in bulunanlar)
                 else:
-                    metin = f"'{isim}' bulunamadi (isimle arama icin Server Members Intent gerekir)."
+                    metin = f"'{isim}' bulunamadi."
                 tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": metin})
 
             elif block.name == "profil_fotografi_gonder":
@@ -452,13 +463,11 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
 
         audio_bytes = await generate_fish_audio(ai_text)
 
-        # 1) MP3 (+ varsa profil fotoğrafları) -> komutun yazıldığı kanala
         files = [discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
         for fname, fbytes in fotograflar:
             files.append(discord.File(io.BytesIO(fbytes), filename=fname))
         await interaction.followup.send(files=files)
 
-        # 2) Bakiye kartı -> ayarlı UI kanalı varsa oraya, yoksa buraya
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
         hedef = None
         if guild is not None:
@@ -514,23 +523,21 @@ async def veritan_search_command(interaction: discord.Interaction, message: str,
 )
 @app_commands.describe(
     kullanici="Bakiyesi ayarlanacak kişi",
-    limit="Verilecek hak miktarı (ondalık olabilir, sınır yok: 5, 25, 0.5, 100...)",
+    limit="Verilecek hak miktarı (ondalık olabilir: 5, 25, 0.5, 100...)",
 )
 async def limitreset_command(
     interaction: discord.Interaction,
     kullanici: discord.Member,
     limit: app_commands.Range[float, 0.0, 1000000.0],
 ):
+    await interaction.response.defer(ephemeral=True)
     if not yetkili_mi(interaction.user):
-        await interaction.response.send_message(
-            f"⛔ Bu komutu sadece yetkili kullanabilir.\n"
-            f"(Bot seni şöyle görüyor → kullanıcı adı: `{interaction.user.name}`, ID: `{interaction.user.id}`. "
-            f"Yetkili değilsen koddaki OWNER_USERNAME'i bu kullanıcı adına ya da OWNER_IDS'e bu ID'yi ekle.)",
+        await interaction.followup.send(
+            f"⛔ Sadece yetkili kullanabilir. (Sen → `{interaction.user.name}`, ID: `{interaction.user.id}`)",
             ephemeral=True,
         )
         return
 
-    await interaction.response.defer()
     rec = limit_resetle(kullanici.id, limit)
     await interaction.followup.send(
         content=f"✅ {kullanici.display_name} için hak bakiyesi **{float(limit):.2f}** olarak ayarlandı.",
@@ -540,18 +547,16 @@ async def limitreset_command(
 
 @bot.tree.command(
     name="whereisuiveritan",
-    description="(Sadece yetkili) Bakiye/hak kartlarının gönderileceği kanalı seçer.",
+    description="(Sadece yetkili) Hak kartlarının atılacağı kanalı ayarlar. Kanal seçmezsen bu kanalı seçer.",
 )
-@app_commands.describe(kanal="Kartların atılacağı metin kanalı")
-async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel):
-    # Önce ACK ver (3 sn kuralı) -> "uygulama yanıt vermedi" olmaz
+@app_commands.describe(kanal="(İsteğe bağlı) Kartların atılacağı kanal. Boş bırakırsan komutu yazdığın kanal seçilir.")
+async def whereisui_command(interaction: discord.Interaction, kanal: discord.TextChannel = None):
+    # Önce ACK ver -> asla "uygulama yanıt vermedi" olmaz
     await interaction.response.defer(ephemeral=True)
 
     if not yetkili_mi(interaction.user):
         await interaction.followup.send(
-            f"⛔ Bu komutu sadece yetkili kullanabilir.\n"
-            f"(Bot seni şöyle görüyor → kullanıcı adı: `{interaction.user.name}`, ID: `{interaction.user.id}`. "
-            f"Yetkili değilsen koddaki OWNER_USERNAME'i bu kullanıcı adına ya da OWNER_IDS'e bu ID'yi ekle.)",
+            f"⛔ Sadece yetkili kullanabilir. (Sen → `{interaction.user.name}`, ID: `{interaction.user.id}`)",
             ephemeral=True,
         )
         return
@@ -559,10 +564,11 @@ async def whereisui_command(interaction: discord.Interaction, kanal: discord.Tex
         await interaction.followup.send("Bu komut sadece sunucuda çalışır.", ephemeral=True)
         return
 
-    ui_kanal_ayarla(interaction.guild.id, kanal.id)
+    hedef_kanal = kanal or interaction.channel
+    ui_kanal_ayarla(interaction.guild.id, hedef_kanal.id)
     embed = discord.Embed(
         title="✅ UI Kanalı Ayarlandı",
-        description=f"Buraya seçildi: {kanal.mention}\n\nBundan sonra tüm bakiye/hak kartları bu kanala atılacak. 🎫",
+        description=f"Buraya seçildi: {hedef_kanal.mention}\n\nBundan sonra tüm bakiye/hak kartları bu kanala atılacak. 🎫",
         color=0x2ecc71,
     )
     await interaction.followup.send(embed=embed, ephemeral=True)
