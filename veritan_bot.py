@@ -348,8 +348,31 @@ async def on_ready():
     except Exception as e:
         print(f"Komut senkronize hatası: {e}")
     print(f"Veritan çevrimiçi! ({bot.user})")
+
+    # --- SABİT UI KANALI KENDİ KENDİNE TEŞHİS ---
     if UI_CHANNEL_ID:
         print(f"[UI kanal] SABİT ID kullaniliyor: {UI_CHANNEL_ID}")
+        kanal = bot.get_channel(UI_CHANNEL_ID)
+        if kanal is None:
+            try:
+                kanal = await bot.fetch_channel(UI_CHANNEL_ID)
+            except Exception as e:
+                kanal = None
+                print(f"[UI kanal][UYARI] Kanal BULUNAMADI: {e!r} "
+                      f"-> ID yanlis olabilir veya bot bu kanalin sunucusunda degil.")
+        if kanal is not None:
+            perms = None
+            try:
+                me = kanal.guild.me
+                perms = kanal.permissions_for(me)
+            except Exception:
+                pass
+            if perms is not None and not (perms.send_messages and perms.embed_links):
+                print(f"[UI kanal][UYARI] #{getattr(kanal,'name',UI_CHANNEL_ID)} bulundu AMA izin eksik: "
+                      f"send_messages={perms.send_messages}, embed_links={perms.embed_links}. "
+                      f"Bu izinleri ac yoksa kartlar buraya gitmez.")
+            else:
+                print(f"[UI kanal] OK -> #{getattr(kanal,'name',UI_CHANNEL_ID)} bulundu ve yazma izni var gibi.")
 
 
 async def claude_cevapla(messages, guild, asker, web_arama=False):
@@ -480,30 +503,51 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
 
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
         gonderildi = False
+        hata_sebebi = None
         kid = ui_kanal_al(guild.id if guild is not None else None)
         print(f"[UI kanal] guild={guild.id if guild else None} kullanilan_kanal={kid}")
+
         if kid:
+            # 1) Kanali bul (once cache, sonra API'den cek)
             hedef = bot.get_channel(kid)
             if hedef is None:
                 try:
                     hedef = await bot.fetch_channel(kid)
                 except Exception as e:
-                    print("UI kanal bulunamadi:", e)
+                    hata_sebebi = (
+                        f"Kanal bulunamadi (ID: {kid}). ID yanlis olabilir ya da bot "
+                        f"o kanalin sunucusunda degil. Detay: {e}"
+                    )
+                    print("[UI kanal] fetch hatasi:", repr(e))
                     hedef = None
+
+            # 2) Kanala yaz
             if hedef is not None:
                 try:
                     await hedef.send(embed=embed)
                     gonderildi = True
+                    print(f"[UI kanal] Kart gonderildi -> #{getattr(hedef, 'name', kid)}")
+                except discord.Forbidden as e:
+                    hata_sebebi = (
+                        f"Botun bu kanala YAZMA izni yok. #{getattr(hedef, 'name', kid)} kanalinda "
+                        f"'Mesaj Gonder' + 'Embed Links (Baglantilari Yerlestir)' izinlerini ac. Detay: {e}"
+                    )
+                    print("[UI kanal] Forbidden:", repr(e))
                 except Exception as e:
-                    print("UI kanala gonderilemedi:", e)
-                    try:
-                        await interaction.followup.send(
-                            f"⚠️ Hak kartı sabit kanala gönderilemedi (izin gerekebilir): `{e}`",
-                            ephemeral=True,
-                        )
-                    except Exception:
-                        pass
+                    hata_sebebi = f"Beklenmeyen hata: {e}"
+                    print("[UI kanal] send hatasi:", repr(e))
+
+        # Sabit kanala gidemediyse: sebebi yetkiliye goster, karti da kaybetme
         if not gonderildi:
+            if hata_sebebi:
+                try:
+                    await interaction.followup.send(
+                        f"⚠️ Hak kartı sabit kanala ({kid}) gönderilemedi.\n**Sebep:** {hata_sebebi}",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    pass
+            # Yine de kullaniciya karti goster (kaybolmasin)
             await interaction.followup.send(embed=embed)
 
     except Exception as e:
