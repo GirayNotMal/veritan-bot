@@ -469,22 +469,32 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         await interaction.followup.send(files=files)
 
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
-        hedef = None
+        gonderildi = False
         if guild is not None:
             kid = ui_kanal_al(guild.id)
+            print(f"[UI kanal] guild={guild.id} kayitli_kanal={kid}")
             if kid:
                 hedef = bot.get_channel(kid)
                 if hedef is None:
                     try:
                         hedef = await bot.fetch_channel(kid)
-                    except Exception:
+                    except Exception as e:
+                        print("UI kanal bulunamadi:", e)
                         hedef = None
-        if hedef is not None:
-            try:
-                await hedef.send(embed=embed)
-            except Exception:
-                await interaction.followup.send(embed=embed)
-        else:
+                if hedef is not None:
+                    try:
+                        await hedef.send(embed=embed)
+                        gonderildi = True
+                    except Exception as e:
+                        print("UI kanala gonderilemedi:", e)
+                        try:
+                            await interaction.followup.send(
+                                f"⚠️ Hak kartı ayarlı kanala gönderilemedi (izin gerekebilir): `{e}`",
+                                ephemeral=True,
+                            )
+                        except Exception:
+                            pass
+        if not gonderildi:
             await interaction.followup.send(embed=embed)
 
     except Exception as e:
@@ -567,10 +577,23 @@ async def whereisui_command(interaction: discord.Interaction):
     ui_kanal_ayarla(interaction.guild.id, hedef_kanal.id)
     embed = discord.Embed(
         title="✅ UI Kanalı Ayarlandı",
-        description=f"Buraya seçildi: {hedef_kanal.mention}\n\nBundan sonra tüm bakiye/hak kartları bu kanala atılacak. 🎫",
+        description=f"Bu kanal seçildi: {hedef_kanal.mention}\nBundan sonra tüm bakiye/hak kartları buraya gelecek. 🎫",
         color=0x2ecc71,
     )
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    try:
+        # Kanala GÖRÜNÜR bir kart at -> hem onay, hem izin testi
+        await hedef_kanal.send(embed=embed)
+        await interaction.followup.send(
+            f"✅ Ayarlandı. Kartlar {hedef_kanal.mention} kanalına gidecek.\n"
+            f"Test için **başka bir kanaldan** /veritan dene; kart buraya düşmeli.",
+            ephemeral=True,
+        )
+    except Exception as e:
+        await interaction.followup.send(
+            f"⚠️ Kanal kaydedildi ama buraya yazamıyorum. Botun bu kanalda "
+            f"**Mesaj Gönder** ve **Bağlantıları Yerleştir (Embed Links)** izni olmalı.\nHata: `{e}`",
+            ephemeral=True,
+        )
 
 
 bot.run(DISCORD_TOKEN)
