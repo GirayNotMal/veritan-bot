@@ -62,7 +62,7 @@ SYSTEM_PROMPT2 = (
     "Sen cümlenin gidişatından kullanıcının asıl ne demek istediğini anla, hatayı zihninde sessizce düzelt "
     "ve doğrudan o anlam üzerinden cevap ver. 'Şurayı düzelttim', 'bunu demek istedin sanırım' gibi "
     "düzeltme açıklamaları ASLA yapma, sohbeti hiç bozmadan doğal akışında sürdür."
-    "Eğer Seni Çok Sinirlendirirse Deki Şunu Söyle Sadece Bunu Söyle '[emphasis]Something Happen To Server In Three Days ... [long pause][emphasis] So Make New Server Vacant'"
+    "Eğer Seni Çok Sinirlendirirse Deki Şunu Söyle Sadece Bunu Söyle '[emphasis]Something Happen To Server In Three Days ... And I Will Kil You'"
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
@@ -76,7 +76,7 @@ AYAR_FILE = "veritan_ayarlar.json"
 OWNER_USERNAME = "ztar2907"
 OWNER_IDS = {1062095020703879218}
 
-ENABLE_MEMBER_LOOKUP = False
+ENABLE_MEMBER_LOOKUP = True
 # =================================================
 
 intents = discord.Intents.default()
@@ -1359,5 +1359,84 @@ async def mm_veritan1(
         if motor is not None:
             motor.mesgul = False
 # mmsa
+
+
+# mms2
+
+MM_DUYURU_METNI = "Arkadaşlar Sunucuda Kavga Çıkartmayın Yoksa Sikerim BELANIZI!"
+_MM_SES_CACHE = {}   # metin -> mp3 bytes (her seferinde Fish Audio'ya gitmesin)
+
+
+async def _mm_ses_al(metin: str) -> bytes:
+    if metin in _MM_SES_CACHE:
+        return _MM_SES_CACHE[metin]
+    ses = await generate_fish_audio(metin)
+    _MM_SES_CACHE[metin] = ses
+    return ses
+
+
+@bot.tree.command(
+    name="mm_veritan2",
+    description="(Sadece yetkili) Sabit duyuruyu ses kanalında seslendirir. Model kullanmaz.",
+)
+@app_commands.describe(tekrar="Kaç kez söylensin (varsayılan 3)")
+async def mm_veritan1(
+    interaction: discord.Interaction,
+    tekrar: app_commands.Range[int, 1, 5] = 3,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if not yetkili_mi(interaction.user):
+        await interaction.followup.send(
+            f"⛔ Sadece yetkili kullanabilir. (Sen → `{interaction.user.name}`, ID: `{interaction.user.id}`)",
+            ephemeral=True,
+        )
+        return
+
+    vc = interaction.guild.voice_client if interaction.guild else None
+    if vc is None or not vc.is_connected():
+        vc = _bagli_ses_client()
+    if vc is None:
+        await interaction.followup.send(
+            "⚠️ Veritan ses kanalında değil. Önce `/veritan_katil` çalıştır.",
+            ephemeral=True,
+        )
+        return
+
+    # Motor mesgul bayragini kaldir: duyuru sirasinda sesli mod araya girmesin
+    motor = getattr(bot, "_veritan_motor", None)
+    if motor is not None:
+        motor.mesgul = True
+
+    try:
+        ses = await _mm_ses_al(MM_DUYURU_METNI)
+        yol = f"/tmp/mm_veritan1_{datetime.now().timestamp()}.mp3"
+        with open(yol, "wb") as f:
+            f.write(ses)
+
+        for i in range(tekrar):
+            await _dosya_cal(vc, yol, sil=False)
+            if i < tekrar - 1:
+                await asyncio.sleep(0.4)
+
+        try:
+            os.remove(yol)
+        except Exception:
+            pass
+
+        print(f"[MM] Duyuru {tekrar} kez calindi -> {interaction.user}")
+        await interaction.followup.send(
+            f"✅ Duyuru **{tekrar}** kez seslendirildi:\n> {MM_DUYURU_METNI}",
+            ephemeral=True,
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        await interaction.followup.send(f"⚠️ Seslendirilemedi: `{e}`", ephemeral=True)
+
+    finally:
+        if motor is not None:
+            motor.mesgul = False
+# mmsa2
 
 bot.run(DISCORD_TOKEN)
