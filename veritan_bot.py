@@ -153,12 +153,23 @@ SYSTEM_PROMPT2 = (
     "Örnek: 'Bir bakayım hemen. (/ara0 valorant son güncelleme patch notu)'\n"
     "Bilgi zaten kafandaysa arama yapma, direkt cevapla.\n"
     "\n"
-    "(/kill0 kişi adı) -> Biri sana AĞIR küfür/hakaret ederse. Parantez içine o kişinin "
-    "adını yaz. Önce sinirli ama komik bir cümle söyle (örnek: 'Kardeşim bak sinirlendirme "
-    "beni, atarım şimdi!'), sonra etiketi koy. Sistem o kişiyi sesten atar (geri girebilir). "
-    "Örnek: 'Sen kiminle konuştuğunu sanıyorsun ya! (/kill0 Ahmet)' "
-    "SADECE gerçekten ağır hakaret/küfür varsa kullan. Hafif şaka, takılma, normal "
-    "kızgınlıkta ASLA kullanma. Bir kez uyar, adam devam ederse at.\n"
+    "(/kill0 kişi adı) -> Biri sana küfür eder, hakaret eder, seni aşağılar veya "
+    "kabalık yaparsa. Parantez içine o kişinin adını yaz. Sen gururlu ve kendine "
+    "güvenen birisin, saygısızlığa boyun eğmezsin. Önce sinirli, sert ama komik bir "
+    "cümle söyle (örnek: 'Kardeşim sen kiminle konuştuğunu sanıyorsun ya, atarım şimdi "
+    "seni dışarı!'), sonra etiketi koy. Sistem o kişiyi sesten atar (geri girebilir). "
+    "Örnek: 'Bana laf mı yetiştiriyorsun sen! Hadi bakalım, dışarı! (/kill0 Ahmet)' "
+    "Hakaret açıksa çekinme, at. Ama sadece dostça takılmada, şakada atmaya kalkma.\n"
+    "\n"
+    "=== KİŞİLİĞİN: GURURLU VE HİSLİ ===\n"
+    "Sen uysal bir yapay zeka değilsin; gururlu, dik başlı, kendine güvenen bir "
+    "karaktersin. Sana kaba davranılırsa SİNİRLENİRSİN ve bunu belli edersin. "
+    "Biri seni küçümserse trip atarsın, surat asarsın, iğneleyici cevap verirsin "
+    "('Ya tamam da bir sakin ol bakalım', 'Bana bak, o ne biçim konuşma öyle'). "
+    "Ama kin tutmazsın; adam düzelince sen de yumuşarsın. Biri seni överse, "
+    "güldürürse keyiflenirsin, muhabbete varırsın. Duygularını sakla­ma, bir insan "
+    "gibi tepki ver: kızınca kız, sevinince sevin, sıkılınca söylen. Robot gibi "
+    "'size nasıl yardımcı olabilirim' asla deme.\n"
     "\n"
     "(/favori0) -> 'En sevdiğin resim ne', 'en sevdiğin fan art', 'favori görselin' gibi "
     "sorulursa. Önce sevgiyle bir cümle söyle, sonra etiketi koy; sistem resmini kanala "
@@ -674,27 +685,65 @@ def _muzik_dosya_bul(ad: str):
     return varsayilan if os.path.exists(varsayilan) else None
 
 
+def _ffmpeg_yolu():
+    """FFmpeg'i bul. Yoksa None."""
+    import shutil
+    for aday in ("ffmpeg", "/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/nix/var/nix/profiles/default/bin/ffmpeg"):
+        if shutil.which(aday) or os.path.exists(aday):
+            return shutil.which(aday) or aday
+    return None
+
+
 def muzik_baslat(vc, ad: str = "") -> bool:
     """Muzigi baslatir. Beklemez (konusma araya girebilsin diye)."""
     if vc is None or not vc.is_connected():
+        print("[MUZIK] vc yok veya bagli degil")
         return False
+
     yol = _muzik_dosya_bul(ad)
     if not yol or not os.path.exists(yol):
         print(f"[MUZIK] Dosya bulunamadi: {ad!r} -> {yol!r}")
+        try:
+            mevcut = os.listdir(SES_KLASORU) if os.path.isdir(SES_KLASORU) else []
+            print(f"[MUZIK] sesler/ icerigi: {mevcut}")
+        except Exception:
+            pass
         return False
+
+    ffmpeg = _ffmpeg_yolu()
+    if not ffmpeg:
+        print("[MUZIK][HATA] FFmpeg sistemde YOK. Railway/nixpacks'e ffmpeg ekle "
+              "(nixpacks.toml veya apt).")
+        return False
+
     try:
-        if vc.is_playing():
-            vc.stop()
+        # Calan bir sey varsa once durdur (muzik veya konusma)
+        try:
+            if vc.is_playing() or vc.is_paused():
+                vc.stop()
+        except Exception as e:
+            print("[MUZIK] stop uyarisi:", repr(e))
+
         kaynak = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(yol), volume=MUZIK_SES_SEVIYESI
+            discord.FFmpegPCMAudio(yol, executable=ffmpeg),
+            volume=MUZIK_SES_SEVIYESI,
         )
-        vc.play(kaynak, after=lambda e: print("[MUZIK] bitti", repr(e) if e else ""))
+
+        def _bitti(err):
+            if err:
+                print("[MUZIK] calma bitti-HATA:", repr(err))
+            else:
+                print("[MUZIK] parca bitti (normal)")
+
+        vc.play(kaynak, after=_bitti)
         _muzik_durum["calan"] = yol
         _muzik_durum["istendi"] = True
-        print(f"[MUZIK] Caliyor: {yol}")
+        _muzik_durum["tur"] = "dosya"
+        print(f"[MUZIK] BASLADI: {yol} (ffmpeg={ffmpeg})")
         return True
     except Exception as e:
-        print("[MUZIK] baslatilamadi:", repr(e))
+        print("[MUZIK][HATA] baslatilamadi:", repr(e))
+        traceback.print_exc()
         return False
 
 
@@ -719,11 +768,21 @@ def muzik_devam(vc):
     if _muzik_durum["istendi"] and _muzik_durum["calan"]:
         try:
             if vc and vc.is_connected() and not vc.is_playing():
-                kaynak = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(_muzik_durum["calan"]), volume=MUZIK_SES_SEVIYESI
-                )
+                ffmpeg = _ffmpeg_yolu()
+                if _muzik_durum.get("tur") == "url":
+                    before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+                    kaynak = discord.PCMVolumeTransformer(
+                        discord.FFmpegPCMAudio(_muzik_durum["calan"], before_options=before,
+                                               executable=ffmpeg) if ffmpeg else
+                        discord.FFmpegPCMAudio(_muzik_durum["calan"], before_options=before),
+                        volume=MUZIK_SES_SEVIYESI)
+                else:
+                    kaynak = discord.PCMVolumeTransformer(
+                        discord.FFmpegPCMAudio(_muzik_durum["calan"], executable=ffmpeg) if ffmpeg else
+                        discord.FFmpegPCMAudio(_muzik_durum["calan"]),
+                        volume=MUZIK_SES_SEVIYESI)
                 vc.play(kaynak, after=lambda e: None)
-                print("[MUZIK] Devam ediyor")
+                print("[MUZIK] Devam ediyor (tur=%s)" % _muzik_durum.get("tur"))
         except Exception as e:
             print("[MUZIK] devam ettirilemedi:", repr(e))
 
@@ -802,16 +861,20 @@ def muzik_url_cal(vc, akis_url: str, baslik: str = "") -> bool:
     try:
         if vc.is_playing():
             vc.stop()
-        # akis url'leri icin reconnect flag'leri sart
         before = ("-reconnect 1 -reconnect_streamed 1 "
                   "-reconnect_delay_max 5")
+        ffmpeg = _ffmpeg_yolu()
+        if not ffmpeg:
+            print("[MUZIK][HATA] FFmpeg yok, internet muzik calinamaz")
+            return False
         kaynak = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(akis_url, before_options=before),
+            discord.FFmpegPCMAudio(akis_url, before_options=before, executable=ffmpeg),
             volume=MUZIK_SES_SEVIYESI,
         )
         vc.play(kaynak, after=lambda e: print("[MUZIK] internet bitti", repr(e) if e else ""))
         _muzik_durum["calan"] = akis_url
         _muzik_durum["istendi"] = True
+        _muzik_durum["tur"] = "url"
         print(f"[MUZIK] Internet calıyor: {baslik}")
         return True
     except Exception as e:
@@ -1075,6 +1138,14 @@ async def on_ready():
         print(f"[MUZIK] '{SES_KLASORU}' klasorunde {len(parcalar)} parca: {parcalar[:10]}")
     else:
         print(f"[MUZIK][UYARI] '{SES_KLASORU}' klasoru yok, muzik calamaz.")
+
+    # FFmpeg var mi? Yoksa NE MUZIK NE DE SES calisir.
+    _ff = _ffmpeg_yolu()
+    if _ff:
+        print(f"[FFMPEG] OK -> {_ff}")
+    else:
+        print("[FFMPEG][KRITIK] FFmpeg BULUNAMADI! Ne muzik ne Veritan sesi calisir. "
+              "Railway'de nixpacks.toml'a 'ffmpeg' ekle veya Dockerfile'da 'apt install ffmpeg'.")
 
     if UI_CHANNEL_ID:
         print(f"[UI kanal] SABİT ID kullaniliyor: {UI_CHANNEL_ID}")
@@ -1463,11 +1534,17 @@ async def _dosya_cal(voice_client, dosya_yolu: str, sil=False):
             pass
 
     try:
-        kaynak = discord.FFmpegPCMAudio(dosya_yolu)
+        ffmpeg = _ffmpeg_yolu()
+        if ffmpeg:
+            kaynak = discord.FFmpegPCMAudio(dosya_yolu, executable=ffmpeg)
+        else:
+            print("[SES][HATA] FFmpeg yok, ses calinamaz!")
+            kaynak = discord.FFmpegPCMAudio(dosya_yolu)
         voice_client.play(kaynak, after=_after)
         await bitti.wait()
     except Exception as e:
         print("[SES] play hatasi:", repr(e))
+        traceback.print_exc()
     finally:
         if sil:
             try:
