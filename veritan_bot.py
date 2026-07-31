@@ -38,6 +38,12 @@ SESSIZ_DAKIKA = 3                    # kac dakika susarsa/mikrofonu kapaliysa la
 SESSIZ_KONTROL_SN = 30               # kac saniyede bir kontrol
 SESSIZ_TEKRAR_DK = 10                # ayni kisiye tekrar laf atmadan once bekleme
 
+# ---- ARADA SIRADA HAL HATIR SORMA (muhabbet dürtmesi) ----
+MUHABBET_ACIK = True                 # arada bir kendiliginden laf atsin mi
+MUHABBET_MIN_DK = 6                  # en az bu kadar dakika gecmeden muhabbet baslatmaz
+MUHABBET_MAX_DK = 12                 # en fazla bu kadar dakikada bir muhabbet eder
+MUHABBET_KISI_TEKRAR_DK = 15         # ayni kisiyle tekrar muhabbet icin bekleme
+
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 # >>> UI KANALI SABİT <<<
@@ -97,9 +103,12 @@ SYSTEM_PROMPT2 = (
     "(/kimler0) -> Seste kimlerin olduğunu detaylı anlatman istenirse.\n"
     "\n"
     "(/yayin0) -> Yayın izlemekle ilgili bir şey isterlerse ('yayınımı izle', 'yayına bak', "
-    "'kim yayın açmış'). ÇOK ÖNEMLİ: Sen bir yayının GÖRÜNTÜSÜNÜ göremezsin. Gördüğünü iddia etme, "
-    "ne olduğunu uydurma. Kimin yayın açtığını söyle, birden fazlaysa hangisine bakacağını SOR, "
-    "sonra o kişiye ne oynadığını sorup anlattıkları üzerinden sohbet et.\n"
+    "'kim yayın açmış'). ÇOK ÖNEMLİ: Yayın açan kişinin ne oynadığını/hangi uygulamada olduğunu "
+    "BİLİYORSUN (sana veriliyor), ama yayının GÖRÜNTÜSÜNÜ, ekranda tam ne olduğunu göremezsin. "
+    "O yüzden oyunun/uygulamanın adından yola çıkıp sohbet et ('Valorant oynuyorsun, nasıl gidiyor, "
+    "kaç kazandın' gibi); ama 'şu an şurada yürüyorsun, şunu yaptın' gibi ekranı gördüğünü "
+    "iddia eden şeyler ASLA söyleme, uydurma. Birden fazla yayıncı varsa hangisiyle "
+    "ilgileneceğini SOR.\n"
     "\n"
     "(/ara0 aranacak şey) -> İnternetten güncel bilgi gerekiyorsa "
     "(oyun güncellemesi, patch notu, bir şeyin fiyatı, maç sonucu, güncel haber, "
@@ -664,11 +673,13 @@ def yayin_durumu_metni(guild=None) -> str:
         return "Su an kimse yayin acmiyor."
     if len(yayinlar) == 1:
         return ("Yayin acan tek kisi: " + yayinlar[0] +
-                ". NOT: Yayinin goruntusunu goremiyorsun; ona ne oynadigini "
-                "veya ne oldugunu sorup sohbet et.")
+                ". Ne oynadigini/uygulamayi biliyorsun ama yayinin GORUNTUSUNU goremezsin. "
+                "Oyun/uygulama adindan yola cikip 'sunu oynuyorsun, nasil gidiyor' gibi "
+                "muhabbet et; ekranda tam olarak ne oldugunu gordugunu iddia etme.")
     return ("Yayin acanlar:\n- " + "\n- ".join(yayinlar) +
-            "\nNOT: Yayinlarin goruntusunu goremiyorsun. Hangisine odaklanacagini SOR, "
-            "sonra o kisiye ne oynadigini sorup sohbet et.")
+            "\nNe oynadiklarini/uygulamayi biliyorsun ama yayin GORUNTUSUNU goremezsin. "
+            "Hangisiyle ilgilenecegini SOR, sonra o kisinin oynadigi seyden yola cikip sohbet et; "
+            "ekranda ne oldugunu gordugunu iddia etme.")
 
 
 # ---------- GENEL HATA YAKALAYICI ----------
@@ -1289,8 +1300,11 @@ class VeritanSesMotoru:
         self.mesgul = False
         self.calisiyor = True
         self.son_konusma = {}     # user_id -> son konustugu an
-        self.son_durtme = {}      # user_id -> son laf atilan an
+        self.son_durtme = {}      # user_id -> son sessizlik-lafi atilan an
+        self.son_muhabbet = {}    # user_id -> son muhabbet edilen an
         self.odak_yayinci = None  # uzerine konusulan yayinci
+        self.son_muhabbet_an = datetime.now()   # en son ne zaman muhabbet edildi
+        self._muhabbet_hedef_dk = random.randint(MUHABBET_MIN_DK, MUHABBET_MAX_DK)
 
     def _wake_var_mi(self, cumle):
         dusuk = cumle.lower()
@@ -1491,6 +1505,17 @@ class VeritanSesMotoru:
                     continue
 
                 simdi = datetime.now()
+
+                # --- ARADA SIRADA MUHABBET: kimse istemeden hal hatir sor ---
+                if MUHABBET_ACIK and not self.mesgul:
+                    gecen = (simdi - self.son_muhabbet_an).total_seconds() / 60
+                    if gecen >= self._muhabbet_hedef_dk:
+                        if await self._muhabbet_baslat(kanal, simdi):
+                            self.son_muhabbet_an = datetime.now()
+                            self._muhabbet_hedef_dk = random.randint(
+                                MUHABBET_MIN_DK, MUHABBET_MAX_DK)
+                            continue
+
                 adaylar = []
                 for m in kanal.members:
                     if bot.user and m.id == bot.user.id:
@@ -1532,6 +1557,58 @@ class VeritanSesMotoru:
 
             except Exception as e:
                 print("[DURTME] hata:", repr(e))
+
+    async def _muhabbet_baslat(self, kanal, simdi):
+        """
+        Kimse konusmasa bile arada bir birine ADIYLA seslenip hal hatir sorar,
+        ne yaptigini/yardim gerekip gerekmedigini sorar. Yayin aciksa oyundan
+        yola cikar. True donerse muhabbet edildi.
+        """
+        adaylar = []
+        for m in kanal.members:
+            if bot.user and m.id == bot.user.id:
+                continue
+            son_mub = self.son_muhabbet.get(m.id)
+            if son_mub and (simdi - son_mub).total_seconds() / 60 < MUHABBET_KISI_TEKRAR_DK:
+                continue
+            adaylar.append(m)
+
+        if not adaylar:
+            return False
+
+        hedef = random.choice(adaylar)
+        self.son_muhabbet[hedef.id] = simdi
+
+        # hedef ne yapiyor? (oyun/yayin bilgisi)
+        ne_yapiyor = ""
+        yayinda = False
+        try:
+            vs = hedef.voice
+            yayinda = bool(vs and (vs.self_stream or vs.self_video))
+            for act in (hedef.activities or []):
+                ad = getattr(act, "name", None)
+                if ad:
+                    ne_yapiyor = ad
+                    break
+        except Exception:
+            pass
+
+        if yayinda and ne_yapiyor:
+            gorev = (f"'{hedef.display_name}' su an yayin aciyor ve '{ne_yapiyor}' oynuyor. "
+                     f"Ona adiyla seslenip oyunun nasil gittigini sor, muhabbet baslat. "
+                     f"Yayin GORUNTUSUNU gormedigini unutma, ekranda ne oldugunu uydurma.")
+        elif ne_yapiyor:
+            gorev = (f"'{hedef.display_name}' su an '{ne_yapiyor}' ile mesgul. "
+                     f"Ona adiyla seslenip ne yaptigini sor, lazim olursa yardim teklif et, "
+                     f"kisa bir muhabbet baslat.")
+        else:
+            gorev = (f"'{hedef.display_name}' adli kisiye adiyla seslenip hal hatir sor, "
+                     f"'ne yapiyorsun, yardim edeyim mi' tarzi kisa ve samimi bir muhabbet baslat.")
+
+        print(f"[MUHABBET] -> {hedef.display_name} (yayinda={yayinda}, ne={ne_yapiyor!r})")
+        gorev += " TEK cumle, kisa ve samimi. Etiket KOYMA."
+        await self._durtme_konus(f"[Gorev] {gorev}", hedef)
+        return True
 
     async def _durtme_konus(self, gorev, hedef):
         self.mesgul = True
