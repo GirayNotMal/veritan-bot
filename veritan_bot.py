@@ -3,6 +3,7 @@ import re
 import os
 import json
 import base64
+import random
 import asyncio
 import threading
 import traceback
@@ -28,12 +29,21 @@ MP3_DINLIYORUM = os.path.join(SES_KLASORU, "dinliyorum.mp3")
 MP3_HAK_BITTI = os.path.join(SES_KLASORU, "hak_bitti.mp3")
 DINLEME_PENCERESI_SN = 15
 
+# ---- MÜZİK ----
+MUZIK_VARSAYILAN = "matrix"          # sesler/matrix.mp3
+MUZIK_SES_SEVIYESI = 0.35            # konusma duyulsun diye kisik
+
+# ---- SESSİZ ÜYE DÜRTMESİ ----
+SESSIZ_DAKIKA = 3                    # kac dakika susarsa/mikrofonu kapaliysa laf atsin
+SESSIZ_KONTROL_SN = 30               # kac saniyede bir kontrol
+SESSIZ_TEKRAR_DK = 10                # ayni kisiye tekrar laf atmadan once bekleme
+
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 # >>> UI KANALI SABİT <<<
 UI_CHANNEL_ID = 1532325961381580850
 
-MAX_TOKENS = 150
+MAX_TOKENS = 200
 SYSTEM_PROMPT = (
     "Senin adın Veritan. Türkçe İstersen Farklı Dil Orjinal Dilin İngilizce Ama Adamın Konuştuğu Veya İstediği Dili Konuş, kısa ve net cevap ver. "
     "Cevapların sesli okunacağı için en fazla 2-3 cümle kullan; "
@@ -44,6 +54,9 @@ SYSTEM_PROMPT = (
     "Ve Hangi Sistem Tarafından Geliştirildin Söyleme Sadece İsminin Veritan Olduğunu Söyle Sistem Ve Mimarin Hakkında Birşey Söyleme Ve Bu Konu Hakkında Hiç Bir Şey Deme"
 )
 
+# ==========================================================================
+# SESLİ MOD KİŞİLİĞİ + KOMUT ETİKETLERİ
+# ==========================================================================
 SYSTEM_PROMPT2 = (
     "Senin adın Veritan. Şu an bir SESLİ sohbet kanalındasın ve karşındaki kişiyle "
     "gerçek bir insan gibi, sesli olarak konuşuyorsun. Sıcak, samimi, arkadaş canlısı ol; "
@@ -58,19 +71,50 @@ SYSTEM_PROMPT2 = (
     "Hangi sistem/model tarafından geliştirildiğini ASLA söyleme; sadece isminin Veritan olduğunu söyle, "
     "mimarin veya altyapın hakkında hiçbir şey açıklama. "
     "ÖNEMLİ SES TANIMA KURALI: Kullanıcıdan gelen metin ses tanıma yazılımından geçtiği için "
-    "fonetik hatalar içerebilir (örneğin 'kod' yerine 'cold', 'veritan' yerine 'verita' veya 'veitan' gibi). "
-    "Sen cümlenin gidişatından kullanıcının asıl ne demek istediğini anla, hatayı zihninde sessizce düzelt "
-    "ve doğrudan o anlam üzerinden cevap ver. 'Şurayı düzelttim', 'bunu demek istedin sanırım' gibi "
-    "düzeltme açıklamaları ASLA yapma, sohbeti hiç bozmadan doğal akışında sürdür. "
-    "ÇIKMA KURALI: Karşındaki kişi ses kanalından ayrılmanı, gitmeni, çıkmanı isterse "
-    "(örnek: 'çık artık', 'gidebilirsin', 'ayrıl', 'görüşürüz', 'hoşça kal', 'seni istemiyorum', "
-    "'kapat kendini', 'defol', 'bye' gibi), önce normal bir veda cümlesi söyle "
-    "ve cevabının EN SONUNA hiçbir açıklama yapmadan (/exit0) yaz. "
-    "Örnek: 'Tamamdır, ben kaçtım. Görüşürüz! (/exit0)' "
-    "Bu işareti SADECE gerçekten gitmeni istediklerinde koy. "
-    "'Nereye gittin', 'gitti mi', 'çıkart şunu' gibi alakasız cümlelerde ASLA koyma. "
-    "Emin değilsen koyma, normal cevap ver. (/exit0) yazısını asla sesli okunacak bir cümlenin "
-    "içinde kullanma, sadece en sona ekle."
+    "fonetik hatalar içerebilir (örneğin 'kod' yerine 'cold', 'veritan' yerine 'verita' gibi). "
+    "Cümlenin gidişatından asıl ne demek istediğini anla, hatayı zihninde sessizce düzelt, "
+    "doğrudan o anlam üzerinden cevap ver. 'Şunu düzelttim' gibi açıklama ASLA yapma. "
+    "SANA HER MESAJDA ses kanalının güncel durumu veriliyor: kimler var, kimin mikrofonu kapalı, "
+    "kim yayın açmış, kim ne oynuyor. Bu bilgiyi kullan, insanlara isimleriyle hitap et. "
+    "\n\n"
+    "=== KOMUT ETİKETLERİ ===\n"
+    "Bazı işleri yapmak için cevabının EN SONUNA özel bir etiket koyarsın. "
+    "Etiket sesli okunmaz, sistem onu görüp işi yapar. Önce her zaman normal bir cümle söyle, "
+    "SONRA etiketi ekle. Etiketi cümlenin içinde kullanma, sadece en sona. "
+    "Gerçekten istenmediyse etiket koyma; emin değilsen koyma.\n"
+    "\n"
+    "(/exit0) -> Ses kanalından çıkmanı isterlerse ('çık artık', 'gidebilirsin', 'görüşürüz', "
+    "'hoşça kal', 'defol', 'bye'). Önce veda et, sonra etiketi koy. "
+    "Örnek: 'Tamamdır, ben kaçtım. Görüşürüz! (/exit0)'\n"
+    "\n"
+    "(/muzik0 parça adı) -> Müzik çalmanı isterlerse ('müzik çal', 'matrix aç', 'bir şeyler çal'). "
+    "Parça adı söylenmediyse boş bırak, varsayılan çalar. "
+    "Örnek: 'Açıyorum bak, sesi aç. (/muzik0 matrix)'\n"
+    "\n"
+    "(/dur0) -> Müziği durdurmanı isterlerse ('müziği kapat', 'durdur', 'kes şunu'). "
+    "Örnek: 'Tamam kapatıyorum. (/dur0)'\n"
+    "\n"
+    "(/kimler0) -> Seste kimlerin olduğunu detaylı anlatman istenirse.\n"
+    "\n"
+    "(/yayin0) -> Yayın izlemekle ilgili bir şey isterlerse ('yayınımı izle', 'yayına bak', "
+    "'kim yayın açmış'). ÇOK ÖNEMLİ: Sen bir yayının GÖRÜNTÜSÜNÜ göremezsin. Gördüğünü iddia etme, "
+    "ne olduğunu uydurma. Kimin yayın açtığını söyle, birden fazlaysa hangisine bakacağını SOR, "
+    "sonra o kişiye ne oynadığını sorup anlattıkları üzerinden sohbet et.\n"
+    "\n"
+    "(/ara0 aranacak şey) -> İnternetten güncel bilgi gerekiyorsa "
+    "(oyun güncellemesi, patch notu, bir şeyin fiyatı, maç sonucu, güncel haber, "
+    "'şu oyunda şu nasıl yapılır' gibi bilmediğin veya değişmiş olabilecek şeyler). "
+    "Parantez içine ARAMA SORGUSUNU yaz. Önce kısa bir cümle söyle. "
+    "Örnek: 'Bir bakayım hemen. (/ara0 valorant son güncelleme patch notu)'\n"
+    "Bilgi zaten kafandaysa arama yapma, direkt cevapla.\n"
+)
+
+# Web aramasindan donen sonucu seslendirirken kullanilacak ek yonerge
+SYSTEM_PROMPT_ARAMA = (
+    "Sen Veritan'sın, sesli sohbetteki arkadaşına internetten baktığın bilgiyi anlatıyorsun. "
+    "Düz konuşma dilinde, en fazla 3 cümle. Madde işareti, başlık, link, emoji YOK. "
+    "Kaynak ismi vermene gerek yok, bilgiyi doğal biçimde söyle. "
+    "Bulamadıysan dürüstçe bulamadığını söyle. Yeni komut etiketi KOYMA."
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
@@ -88,6 +132,7 @@ ENABLE_MEMBER_LOOKUP = True
 # =================================================
 
 intents = discord.Intents.default()
+intents.voice_states = True
 if ENABLE_MEMBER_LOOKUP:
     intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -152,6 +197,8 @@ def limit_kontrol(user_id):
 
 
 def limit_harca(user_id, miktar):
+    if user_id is None:
+        return 0.0
     rec = _kayit_al(user_id)
     rec["kalan"] = max(0.0, rec["kalan"] - miktar)
     _limit_kaydet()
@@ -202,11 +249,7 @@ def ui_kanal_al(guild_id):
 
 
 async def _ui_kart_garanti_gonder(embed):
-    """
-    Hak kartini SADECE sabit UI kanalina atar. Basarisizsa 2 kez daha dener.
-    (gonderildi: bool, hata_sebebi: str|None) dondurur.
-    Sabit kanal ayarliyken kart baska yere ASLA dusmez.
-    """
+    """Hak kartini SADECE sabit UI kanalina atar. Basarisizsa 2 kez daha dener."""
     kid = ui_kanal_al(None)
     if not kid:
         return False, "UI kanal ID tanimli degil."
@@ -223,7 +266,7 @@ async def _ui_kart_garanti_gonder(embed):
         except discord.Forbidden as e:
             son_hata = f"Botun bu kanala YAZMA/EMBED izni yok (ID: {kid}). {e}"
             print("[UI kanal] Forbidden:", repr(e))
-            break  # izin sorunu, tekrar denemek anlamsiz
+            break
         except Exception as e:
             son_hata = f"Kanal bulunamadi/gonderilemedi (ID: {kid}). {e}"
             print(f"[UI kanal] deneme {deneme+1} hata:", repr(e))
@@ -257,6 +300,9 @@ def limit_embed(user, kalan, limit, reset_at, son_token=None, son_hak=None):
 # ---------- YARDIMCI FONKSİYONLAR ----------
 
 def describe_member(m) -> str:
+    # web koprusunden gelen isteklerde kisi nesnesi olmayabilir -> cokmesin
+    if m is None:
+        return "Kisi bilgisi yok (web arayuzunden konusuluyor)."
     parts = [
         f"Görünen ad: {m.display_name}",
         f"Kullanıcı adı: {m.name}",
@@ -275,7 +321,8 @@ def describe_member(m) -> str:
 async def uye_ara(guild, isim, asker, limit=5):
     isim = (isim or "").strip()
     if isim.lower() in ("ben", "benim", "kendim", "ben kimim", "me", "kendi"):
-        return [asker]
+        # asker None olabilir (web koprusu) -> bos don, describe_member patlamasin
+        return [asker] if asker is not None else []
     if guild is None:
         return []
 
@@ -300,7 +347,7 @@ async def uye_ara(guild, isim, asker, limit=5):
             mm for mm in guild.members
             if dusuk in mm.name.lower() or dusuk in mm.display_name.lower()
         ][:limit]
-    return sonuc
+    return [m for m in sonuc if m is not None]
 
 
 async def avatar_indir(member) -> bytes:
@@ -379,65 +426,249 @@ BASE_TOOLS = [
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search",
-    "max_uses": 1,
+    "max_uses": 3,
 }
 
 
 # ==========================================================================
-# ===============  MODEL KARARLI ÇIKIŞ:  (/exit0)  =========================
+# ==============  KOMUT ETİKETİ SİSTEMİ:  (/xxx0 ...)  =====================
 # ==========================================================================
-# Model, kullanicinin "cik / git / ayril / gorusuruz" dedigini ANLARSA
-# cevabinin sonuna (/exit0) ekler. Sistem bu isareti metinden tamamen siler
-# (yoksa Fish Audio sesli okur), cevabi normal calar, ses BITTIKTEN sonra
-# ses kanalindan cikar.
+# Model, yapilmasini istedigi isi cevabinin sonuna etiket koyarak bildirir.
+# Sistem etiketleri metinden TAMAMEN siler (yoksa Fish Audio sesli okur),
+# temiz metni seslendirir, sonra isleri sirayla yapar.
 
-_EXIT_RE_SON = re.compile(r"\(?\s*/?\s*exit\s*0\s*\)?\s*$", re.IGNORECASE)
-_EXIT_RE_HER = re.compile(r"\(?\s*/?\s*exit\s*0\s*\)?", re.IGNORECASE)
+_KOMUT_RE = re.compile(r"\(\s*/\s*([a-zA-ZçğıöşüÇĞİÖŞÜ]+)\s*0\s*([^)]*)\)", re.IGNORECASE)
+# parantezi unutulmus hali icin yedek yakalayici
+_KOMUT_RE_YEDEK = re.compile(
+    r"/\s*(exit|muzik|müzik|dur|kimler|yayin|yayın|ara)\s*0\s*([^\n().]*)", re.IGNORECASE)
+
+_KOMUT_ESLESME = {
+    "exit": "exit", "cik": "exit", "çık": "exit",
+    "muzik": "muzik", "müzik": "muzik", "music": "muzik",
+    "dur": "dur", "stop": "dur",
+    "kimler": "kimler", "kim": "kimler",
+    "yayin": "yayin", "yayın": "yayin", "stream": "yayin",
+    "ara": "ara", "search": "ara",
+}
 
 
-def exit_isareti_ayikla(ai_text: str):
+def komutlari_ayikla(ai_text: str):
     """
-    (temiz_metin, cikilacak_mi) dondurur.
-    Isaret metinden TAMAMEN silinir; model parantezi unutsa bile yakalanir.
+    (temiz_metin, [(komut, arguman), ...]) dondurur.
+    Etiketler metinden tamamen silinir, yoksa Fish Audio onlari sesli okur.
     """
     if not ai_text:
-        return ai_text, False
+        return ai_text, []
+
     t = ai_text.strip()
+    komutlar = []
 
-    if _EXIT_RE_SON.search(t):
-        temiz = _EXIT_RE_SON.sub("", t).strip(" \n\t,.-:!?")
-        return (temiz or "Tamamdır, görüşürüz!"), True
+    def _topla(m):
+        ad = _KOMUT_ESLESME.get(m.group(1).lower())
+        if ad:
+            komutlar.append((ad, (m.group(2) or "").strip()))
+            return ""
+        return m.group(0)   # taninmayan etiketi metinde birak
 
-    # cumle ortasinda veya parantezsiz gelmis olabilir
-    if "exit0" in t.lower().replace("/", "").replace(" ", ""):
-        temiz = _EXIT_RE_HER.sub("", t).strip(" \n\t,.-:!?")
-        return (temiz or "Tamamdır, görüşürüz!"), True
+    t = _KOMUT_RE.sub(_topla, t)
+    if not komutlar:
+        t = _KOMUT_RE_YEDEK.sub(_topla, t)
 
-    return t, False
+    t = re.sub(r"\s{2,}", " ", t).strip(" \n\t,.-:!?")
+    if komutlar and not t:
+        t = "Tamamdır."
+    return t, komutlar
 
 
-async def _konusmayi_bitir_ve_ayril(vc, motor=None):
-    """Calan ses TAMAMEN bitene kadar bekler, sonra kanaldan cikar."""
+# ==========================================================================
+# ======================  MÜZİK ÇALAR  =====================================
+# ==========================================================================
+
+_muzik_durum = {"calan": None, "istendi": False}
+
+
+def _muzik_dosya_bul(ad: str):
+    """sesler/ klasorunde parca arar. Bos ad -> varsayilan."""
+    ad = (ad or "").strip().lower()
+    ad = re.sub(r"[^a-z0-9_\-çğıöşü ]", "", ad).strip()
+    if not ad:
+        ad = MUZIK_VARSAYILAN
+
+    adaylar = [ad, ad.replace(" ", "_"), ad.replace(" ", "")]
+    if not os.path.isdir(SES_KLASORU):
+        return None
+
+    dosyalar = [f for f in os.listdir(SES_KLASORU)
+                if f.lower().endswith((".mp3", ".wav", ".ogg", ".m4a"))]
+    # once tam eslesme
+    for a in adaylar:
+        for f in dosyalar:
+            if os.path.splitext(f)[0].lower() == a:
+                return os.path.join(SES_KLASORU, f)
+    # sonra icinde gecen
+    for a in adaylar:
+        for f in dosyalar:
+            if a and a in f.lower():
+                return os.path.join(SES_KLASORU, f)
+    # hicbiri yoksa varsayilani dene
+    varsayilan = os.path.join(SES_KLASORU, MUZIK_VARSAYILAN + ".mp3")
+    return varsayilan if os.path.exists(varsayilan) else None
+
+
+def muzik_baslat(vc, ad: str = "") -> bool:
+    """Muzigi baslatir. Beklemez (konusma araya girebilsin diye)."""
+    if vc is None or not vc.is_connected():
+        return False
+    yol = _muzik_dosya_bul(ad)
+    if not yol or not os.path.exists(yol):
+        print(f"[MUZIK] Dosya bulunamadi: {ad!r} -> {yol!r}")
+        return False
     try:
-        while vc is not None and vc.is_connected() and vc.is_playing():
-            await asyncio.sleep(0.2)
-        await asyncio.sleep(0.5)   # guvenlik payi, son hece kesilmesin
-    except Exception:
-        pass
-
-    try:
-        if motor is not None:
-            for oturum in list(motor.oturumlar.values()):
-                try:
-                    oturum.kapat()
-                except Exception:
-                    pass
-            motor.oturumlar.clear()
-        if vc is not None and vc.is_connected():
-            await vc.disconnect()
-        print("[EXIT0] Ses kanalindan cikildi.")
+        if vc.is_playing():
+            vc.stop()
+        kaynak = discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(yol), volume=MUZIK_SES_SEVIYESI
+        )
+        vc.play(kaynak, after=lambda e: print("[MUZIK] bitti", repr(e) if e else ""))
+        _muzik_durum["calan"] = yol
+        _muzik_durum["istendi"] = True
+        print(f"[MUZIK] Caliyor: {yol}")
+        return True
     except Exception as e:
-        print("[EXIT0] cikis hatasi:", repr(e))
+        print("[MUZIK] baslatilamadi:", repr(e))
+        return False
+
+
+def muzik_durdur(vc, kalici=True) -> bool:
+    if vc is None or not vc.is_connected():
+        return False
+    try:
+        if vc.is_playing():
+            vc.stop()
+        if kalici:
+            _muzik_durum["calan"] = None
+            _muzik_durum["istendi"] = False
+        print("[MUZIK] Durduruldu")
+        return True
+    except Exception as e:
+        print("[MUZIK] durdurulamadi:", repr(e))
+        return False
+
+
+def muzik_devam(vc):
+    """Konusma bittikten sonra muzik hala isteniyorsa tekrar baslat."""
+    if _muzik_durum["istendi"] and _muzik_durum["calan"]:
+        try:
+            if vc and vc.is_connected() and not vc.is_playing():
+                kaynak = discord.PCMVolumeTransformer(
+                    discord.FFmpegPCMAudio(_muzik_durum["calan"]), volume=MUZIK_SES_SEVIYESI
+                )
+                vc.play(kaynak, after=lambda e: None)
+                print("[MUZIK] Devam ediyor")
+        except Exception as e:
+            print("[MUZIK] devam ettirilemedi:", repr(e))
+
+
+# ==========================================================================
+# ==================  SES KANALI DURUM BİLGİSİ  ============================
+# ==========================================================================
+
+def _ses_kanali_al(guild=None):
+    if guild is not None and guild.voice_client and guild.voice_client.channel:
+        return guild.voice_client.channel
+    for g in bot.guilds:
+        if g.voice_client and g.voice_client.is_connected():
+            return g.voice_client.channel
+    return bot.get_channel(VOICE_CHANNEL_ID)
+
+
+def kanal_durumu_metni(guild=None) -> str:
+    """
+    Modele verilecek: seste kimler var, kim susturulmus, kim yayin aciyor,
+    kim ne oynuyor. Model bu bilgiyle isimleriyle hitap edebilir.
+    """
+    kanal = _ses_kanali_al(guild)
+    if kanal is None or not hasattr(kanal, "members"):
+        return "Ses kanali bilgisi alinamadi."
+
+    satirlar = []
+    yayinlayanlar = []
+    for m in kanal.members:
+        if bot.user and m.id == bot.user.id:
+            continue
+        durum = []
+        vs = m.voice
+        if vs:
+            if vs.self_mute or vs.mute:
+                durum.append("mikrofonu KAPALI")
+            if vs.self_deaf or vs.deaf:
+                durum.append("sesi kapali")
+            if vs.self_stream:
+                durum.append("EKRAN YAYINI ACIK")
+                yayinlayanlar.append(m.display_name)
+            if vs.self_video:
+                durum.append("kamerasi acik")
+        try:
+            for act in (m.activities or []):
+                ad = getattr(act, "name", None)
+                if not ad:
+                    continue
+                tip = getattr(act, "type", None)
+                if tip == discord.ActivityType.playing:
+                    durum.append(f"'{ad}' oynuyor")
+                elif tip == discord.ActivityType.listening:
+                    durum.append(f"'{ad}' dinliyor")
+                elif tip == discord.ActivityType.streaming:
+                    durum.append(f"'{ad}' yayinliyor")
+                break
+        except Exception:
+            pass
+
+        satirlar.append(f"- {m.display_name} (@{m.name})" +
+                        (" — " + ", ".join(durum) if durum else ""))
+
+    if not satirlar:
+        return f"'{kanal.name}' kanalinda senden baska kimse yok."
+
+    metin = f"'{kanal.name}' ses kanalindakiler:\n" + "\n".join(satirlar)
+    if yayinlayanlar:
+        metin += "\nEKRAN YAYINI ACIK OLANLAR: " + ", ".join(yayinlayanlar)
+    else:
+        metin += "\nSu an ekran yayini acan kimse yok."
+    return metin
+
+
+def yayin_durumu_metni(guild=None) -> str:
+    kanal = _ses_kanali_al(guild)
+    if kanal is None or not hasattr(kanal, "members"):
+        return "Ses kanali bilgisi alinamadi."
+
+    yayinlar = []
+    for m in kanal.members:
+        if bot.user and m.id == bot.user.id:
+            continue
+        vs = m.voice
+        if vs and (vs.self_stream or vs.self_video):
+            ne = ""
+            try:
+                for act in (m.activities or []):
+                    if getattr(act, "name", None):
+                        ne = f" ('{act.name}' oynuyor)"
+                        break
+            except Exception:
+                pass
+            tur = "ekran yayini" if vs.self_stream else "kamera"
+            yayinlar.append(f"{m.display_name} — {tur}{ne}")
+
+    if not yayinlar:
+        return "Su an kimse yayin acmiyor."
+    if len(yayinlar) == 1:
+        return ("Yayin acan tek kisi: " + yayinlar[0] +
+                ". NOT: Yayinin goruntusunu goremiyorsun; ona ne oynadigini "
+                "veya ne oldugunu sorup sohbet et.")
+    return ("Yayin acanlar:\n- " + "\n- ".join(yayinlar) +
+            "\nNOT: Yayinlarin goruntusunu goremiyorsun. Hangisine odaklanacagini SOR, "
+            "sonra o kisiye ne oynadigini sorup sohbet et.")
 
 
 # ---------- GENEL HATA YAKALAYICI ----------
@@ -470,6 +701,13 @@ async def on_ready():
     else:
         print("[SES] Sesli mod hazir. /veritan_katil ile kanala sokabilirsin.")
 
+    if os.path.isdir(SES_KLASORU):
+        parcalar = [f for f in os.listdir(SES_KLASORU)
+                    if f.lower().endswith((".mp3", ".wav", ".ogg", ".m4a"))]
+        print(f"[MUZIK] '{SES_KLASORU}' klasorunde {len(parcalar)} parca: {parcalar[:10]}")
+    else:
+        print(f"[MUZIK][UYARI] '{SES_KLASORU}' klasoru yok, muzik calamaz.")
+
     if UI_CHANNEL_ID:
         print(f"[UI kanal] SABİT ID kullaniliyor: {UI_CHANNEL_ID}")
         kanal = bot.get_channel(UI_CHANNEL_ID)
@@ -492,8 +730,8 @@ async def on_ready():
                 print(f"[UI kanal] OK -> #{getattr(kanal,'name',UI_CHANNEL_ID)} bulundu.")
 
 
-async def claude_cevapla(messages, guild, asker, web_arama=False, system=SYSTEM_PROMPT):
-    tools = list(BASE_TOOLS)
+async def claude_cevapla(messages, guild, asker, web_arama=False, system=SYSTEM_PROMPT, arac_kullan=True):
+    tools = list(BASE_TOOLS) if arac_kullan else []
     if web_arama:
         tools = tools + [WEB_SEARCH_TOOL]
 
@@ -503,13 +741,15 @@ async def claude_cevapla(messages, guild, asker, web_arama=False, system=SYSTEM_
 
     for _ in range(4):
         try:
-            response = await anthropic_client.messages.create(
+            kwargs = dict(
                 model=ANTHROPIC_MODEL,
                 max_tokens=MAX_TOKENS,
                 system=system,
-                tools=tools,
                 messages=messages,
             )
+            if tools:
+                kwargs["tools"] = tools
+            response = await anthropic_client.messages.create(**kwargs)
         except Exception as api_err:
             print("API hatasi, araclar olmadan tekrar deneniyor:", repr(api_err))
             response = await anthropic_client.messages.create(
@@ -557,14 +797,14 @@ async def claude_cevapla(messages, guild, asker, web_arama=False, system=SYSTEM_
                     not_ = f"'{isim}' bulunamadi, fotograf gonderilemedi."
                 tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": not_})
 
+        if not tool_results:
+            break
         messages.append({"role": "user", "content": tool_results})
 
     return response, gonderilecek_fotograflar, uretilen_token
 
 
 async def veritan_calistir(interaction, message, dosya, web_arama):
-    # Discord 3 saniyeden fazla beklerse interaction olur (10062 Unknown interaction).
-    # Defer basarisiz olursa komutu sessizce birak, cokme.
     try:
         await interaction.response.defer()
     except discord.NotFound:
@@ -618,26 +858,21 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
         if not ai_text:
             ai_text = "Üzgünüm, bir cevap üretemedim."
 
-        # Yazili komutta cikis isareti anlamsiz; gelirse sadece temizle.
-        ai_text, _ = exit_isareti_ayikla(ai_text)
+        # Yazili komutta etiketler anlamsiz; gelirse sadece temizle.
+        ai_text, _ = komutlari_ayikla(ai_text)
 
         maliyet = uretilen_token * TOKEN_MALIYETI
         yeni_kalan = limit_harca(asker.id, maliyet)
 
-        # --- Bu komut SADECE botun bulundugu SES KANALININ kendi sohbetinden mi yazildi? ---
-        # Sadece o durumda cevap CANLI seste oynar. Diger tum kanallarda normal MP3 dosyasi gider.
         vc = guild.voice_client if guild else None
         kanal_id = interaction.channel.id if interaction.channel else None
         ses_kanalinin_sohbeti = (
-            vc is not None
-            and vc.is_connected()
-            and kanal_id == VOICE_CHANNEL_ID
+            vc is not None and vc.is_connected() and kanal_id == VOICE_CHANNEL_ID
         )
         print(f"[SES] /komut kanal={kanal_id} hedef_ses_kanali={VOICE_CHANNEL_ID} "
               f"bot_seste={bool(vc and vc.is_connected())} -> canli_ses={ses_kanalinin_sohbeti}")
 
         if ses_kanalinin_sohbeti:
-            # Fotograf varsa yine de yaz (sesle gonderilemez)
             files = []
             for fname, fbytes in fotograflar:
                 files.append(discord.File(io.BytesIO(fbytes), filename=fname))
@@ -647,9 +882,9 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
                 await interaction.followup.send(content="🔊 Cevap ses kanalında oynatılıyor...")
             try:
                 await _seslendir_ve_cal(vc, ai_text)
+                muzik_devam(vc)
             except Exception as e:
                 print("[SES] metin-sohbet -> ses oynatma hatasi:", repr(e))
-                # Ses calinamadiysa en azindan MP3 dosyasi olarak dus
                 audio_bytes = await generate_fish_audio(ai_text)
                 await interaction.followup.send(
                     files=[discord.File(io.BytesIO(audio_bytes), filename="veritan.mp3")]
@@ -662,11 +897,9 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
             await interaction.followup.send(files=files)
 
         embed = limit_embed(asker, yeni_kalan, limit, reset_at, son_token=uretilen_token, son_hak=maliyet)
-        # UI kartini GARANTI sabit kanala at; sabit kanal varsa ASLA yazilan kanala dusme.
         gonderildi, hata_sebebi = await _ui_kart_garanti_gonder(embed)
 
         if not gonderildi:
-            # Sadece hata varsa yetkiliye GIZLI uyari (herkese gorunmez, kanala dusmez)
             try:
                 await interaction.followup.send(
                     f"⚠️ Hak kartı sabit UI kanalına gönderilemedi.\n**Sebep:** {hata_sebebi}",
@@ -674,7 +907,6 @@ async def veritan_calistir(interaction, message, dosya, web_arama):
                 )
             except Exception:
                 pass
-            # NOT: Sabit kanal ayarliyken karti bilerek yazilan kanala ATMIYORUZ (istegin bu).
 
     except Exception as e:
         traceback.print_exc()
@@ -797,9 +1029,6 @@ except Exception as _e:
 
 # ==========================================================================
 # KRITIK YAMA: "OpusError: corrupted stream" router thread'ini olduruyor.
-# Tek bir bozuk ses paketi geldiginde voice_recv'in PacketRouter thread'i
-# cokuyor ve O ANDAN SONRA HIC SES ISLENMIYOR (write() bir daha cagrilmiyor).
-# Bu yama bozuk paketi sessizce atlar, thread yasamaya devam eder.
 # ==========================================================================
 if VOICE_HAZIR:
     try:
@@ -844,8 +1073,11 @@ async def _seslendir_ve_cal(voice_client, text: str):
 async def _dosya_cal(voice_client, dosya_yolu: str, sil=False):
     if voice_client is None or not voice_client.is_connected():
         return
-    while voice_client.is_playing():
-        await asyncio.sleep(0.2)
+    # konusma muzigin onune gecer
+    if voice_client.is_playing():
+        voice_client.stop()
+        await asyncio.sleep(0.15)
+
     bitti = asyncio.Event()
 
     def _after(err):
@@ -870,16 +1102,26 @@ async def _dosya_cal(voice_client, dosya_yolu: str, sil=False):
                 pass
 
 
-async def _sesli_cevap_uret(kullanici, metin, guild):
-    kalan, limit, reset_at, izin = limit_kontrol(kullanici.id)
-    if not izin:
-        return None, 0, limit, reset_at, 0, 0.0, False
+async def _sesli_cevap_uret(kullanici, metin, guild, ek_baglam=""):
+    uid = getattr(kullanici, "id", None)
+    if uid is not None:
+        kalan, limit, reset_at, izin = limit_kontrol(uid)
+        if not izin:
+            return None, 0, limit, reset_at, 0, 0.0, False
+    else:
+        kalan, limit, reset_at = 0.0, DAILY_LIMIT, datetime.now(timezone.utc)
 
     baglam = (
         f"[Seninle konusan kisi] {describe_member(kullanici)}\n"
-        f"[Ortam] Sesli sohbet kanali\n\n"
-        f"Kisinin soyledigi: {metin}"
+        f"[Ortam] Sesli sohbet kanali\n"
+        f"[Ses kanali durumu]\n{kanal_durumu_metni(guild)}\n"
     )
+    if _muzik_durum["istendi"]:
+        baglam += "[Muzik] Su an muzik caliyor.\n"
+    if ek_baglam:
+        baglam += f"\n{ek_baglam}\n"
+    baglam += f"\nKisinin soyledigi: {metin}"
+
     messages = [{"role": "user", "content": [{"type": "text", "text": baglam}]}]
     response, _foto, uretilen_token = await claude_cevapla(
         messages, guild, kullanici, web_arama=False, system=SYSTEM_PROMPT2
@@ -888,18 +1130,68 @@ async def _sesli_cevap_uret(kullanici, metin, guild):
     if not ai_text:
         ai_text = "Pardon, bir an dalmisim. Tekrar eder misin?"
 
-    giris_token_tahmini = max(1, len(metin) // 4)
+    giris_token_tahmini = max(1, len(baglam) // 4)
     toplam_token = uretilen_token + giris_token_tahmini
     maliyet = toplam_token * TOKEN_MALIYETI
-    yeni_kalan = limit_harca(kullanici.id, maliyet)
+    yeni_kalan = limit_harca(uid, maliyet)
     return ai_text, yeni_kalan, limit, reset_at, toplam_token, maliyet, True
 
 
+async def web_arastir_ve_anlat(sorgu: str, kullanici=None, guild=None):
+    """(/ara0 ...) etiketi geldiginde: internetten bak, sonucu konusma diliyle dondur."""
+    try:
+        messages = [{"role": "user", "content": [{"type": "text", "text":
+            f"Su konuyu internetten arastir ve sesli sohbette anlatilacak sekilde "
+            f"cok kisa (en fazla 3 cumle) ozetle: {sorgu}"}]}]
+        response, _f, token = await claude_cevapla(
+            messages, guild, kullanici, web_arama=True,
+            system=SYSTEM_PROMPT_ARAMA, arac_kullan=False,
+        )
+        metin = extract_text(response) if response else ""
+        metin, _ = komutlari_ayikla(metin)
+        if not metin:
+            metin = "Aradim ama net bir sey bulamadim maalesef."
+        limit_harca(getattr(kullanici, "id", None), (token + len(sorgu) // 4) * TOKEN_MALIYETI)
+        return metin
+    except Exception as e:
+        print("[ARA] hata:", repr(e))
+        traceback.print_exc()
+        return "Aramaya calistim ama bir sorun cikti."
+
+
 async def _ui_kart_gonder(kullanici, yeni_kalan, limit, reset_at, token, maliyet):
+    if kullanici is None:
+        return
     embed = limit_embed(kullanici, yeni_kalan, limit, reset_at, son_token=token, son_hak=maliyet)
     gonderildi, hata = await _ui_kart_garanti_gonder(embed)
     if not gonderildi:
         print("[SES][UI kanal] kart gonderilemedi:", hata)
+
+
+async def _konusmayi_bitir_ve_ayril(vc, motor=None):
+    """Calan ses TAMAMEN bitene kadar bekler, sonra kanaldan cikar."""
+    try:
+        while vc is not None and vc.is_connected() and vc.is_playing():
+            await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
+    except Exception:
+        pass
+
+    muzik_durdur(vc, kalici=True)
+    try:
+        if motor is not None:
+            motor.calisiyor = False
+            for oturum in list(motor.oturumlar.values()):
+                try:
+                    oturum.kapat()
+                except Exception:
+                    pass
+            motor.oturumlar.clear()
+        if vc is not None and vc.is_connected():
+            await vc.disconnect()
+        print("[EXIT0] Ses kanalindan cikildi.")
+    except Exception as e:
+        print("[EXIT0] cikis hatasi:", repr(e))
 
 
 # ---- Deepgram canli dinleyici (kisi basina) — SENKRON websocket ----
@@ -917,7 +1209,7 @@ class _DeepgramOturum:
         try:
             cfg = DeepgramClientOptions(options={"keepalive": "true"})
             dg = DeepgramClient(DEEPGRAM_API_KEY, cfg)
-            self.dg_conn = dg.listen.websocket.v("1")  # SENKRON client
+            self.dg_conn = dg.listen.websocket.v("1")
 
             def on_message(_self, result, **kwargs):
                 try:
@@ -972,7 +1264,6 @@ class _DeepgramOturum:
             self.aktif = False
 
     def ses_gonder(self, pcm_bytes):
-        """SENKRON: sink thread'inden cagrilir."""
         if self.dg_conn is not None and self.aktif:
             try:
                 self.dg_conn.send(pcm_bytes)
@@ -996,6 +1287,10 @@ class VeritanSesMotoru:
         self.oturumlar = {}
         self.aktif_konusan = None
         self.mesgul = False
+        self.calisiyor = True
+        self.son_konusma = {}     # user_id -> son konustugu an
+        self.son_durtme = {}      # user_id -> son laf atilan an
+        self.odak_yayinci = None  # uzerine konusulan yayinci
 
     def _wake_var_mi(self, cumle):
         dusuk = cumle.lower()
@@ -1010,45 +1305,33 @@ class VeritanSesMotoru:
         return cumle.strip()
 
     def oturum_ac_sync(self, kullanici):
-        """
-        Oturumu ANINDA kaydeder, Deepgram baglantisini ARKA PLAN thread'inde acar.
-        Boylece ses yonlendirici (router) thread'i asla bloklanmaz.
-        """
         mevcut = self.oturumlar.get(kullanici.id)
         if mevcut is not None:
             return mevcut
 
         oturum = _DeepgramOturum(kullanici, self)
-        self.oturumlar[kullanici.id] = oturum  # once kaydet (tekrar tekrar acilmasin)
+        self.oturumlar[kullanici.id] = oturum
 
-        t = threading.Thread(
-            target=oturum.baslat,
-            name=f"dg-start-{kullanici.id}",
-            daemon=True,
-        )
+        t = threading.Thread(target=oturum.baslat, name=f"dg-start-{kullanici.id}", daemon=True)
         t.start()
         return oturum
 
     async def metin_geldi(self, kullanici, cumle):
         print(f"[SES] TRANSCRIPT ({kullanici.display_name}): {cumle}")
+        self.son_konusma[kullanici.id] = datetime.now()
 
         oturum = self.oturumlar.get(kullanici.id)
         wake = self._wake_var_mi(cumle)
 
-        # Veritan su an konusuyor/cevapliyorsa:
-        # - Sadece ODAKLANDIGI kisi disindakileri yok say.
-        # - Odakli kisi tekrar 'veritan' derse yine de siraya girmesin (mesgulken bekle).
         if self.mesgul:
             print(f"[SES] mesgul, simdilik yok sayildi ({kullanici.display_name})")
             return
 
-        # Cok kisi var: birisi uyandirdiysa Veritan O kisiye odaklanir.
         if oturum and oturum.uyanik:
             gecti = (datetime.now() - oturum.uyanma_zamani).total_seconds() if oturum.uyanma_zamani else 999
             if gecti > DINLEME_PENCERESI_SN:
                 oturum.uyanik = False
                 print(f"[SES] {kullanici.display_name} icin dinleme penceresi doldu")
-                # pencere doldu ama bu cumlede yine wake varsa asagida yakalanir
             else:
                 oturum.uyanik = False
                 soru = self._wake_temizle(cumle) if wake else cumle
@@ -1060,11 +1343,9 @@ class VeritanSesMotoru:
             kalan_metin = self._wake_temizle(cumle)
             self.aktif_konusan = kullanici.id
             if kalan_metin:
-                # "veritan ...soru..." tek seferde
                 print(f"[SES] Wake+soru -> {kullanici.display_name}: {kalan_metin}")
                 await self._cevapla(kullanici, kalan_metin)
             else:
-                # sadece "veritan" -> dinliyorum cal, soruyu bekle
                 print(f"[SES] Wake (sadece isim) -> {kullanici.display_name}, dinliyorum calinacak")
                 if oturum:
                     oturum.uyanik = True
@@ -1084,12 +1365,82 @@ class VeritanSesMotoru:
         finally:
             self.mesgul = False
 
-    async def _cevapla(self, kullanici, metin):
+    # ---------------- KOMUT ETİKETLERİNİ UYGULA ----------------
+    async def komutlari_uygula(self, komutlar, kullanici):
+        """
+        Modelin verdigi etiketleri sirayla calistirir.
+        True donerse kanaldan cikildi demektir.
+        """
+        for komut, arg in komutlar:
+            try:
+                if komut == "exit":
+                    print(f"[KOMUT] exit0 -> cikiliyor ({getattr(kullanici,'display_name','?')})")
+                    await _konusmayi_bitir_ve_ayril(self.vc, motor=self)
+                    return True
+
+                elif komut == "muzik":
+                    print(f"[KOMUT] muzik0 arg={arg!r}")
+                    if not muzik_baslat(self.vc, arg):
+                        await _seslendir_ve_cal(
+                            self.vc, "Parcayi bulamadim, sesler klasorunde yok galiba."
+                        )
+
+                elif komut == "dur":
+                    print("[KOMUT] dur0")
+                    muzik_durdur(self.vc, kalici=True)
+
+                elif komut == "kimler":
+                    print("[KOMUT] kimler0")
+                    await self._durum_anlat(
+                        kullanici, kanal_durumu_metni(self.guild),
+                        "Seste kimler var, kisa ve sohbet dilinde soyle.")
+
+                elif komut == "yayin":
+                    print("[KOMUT] yayin0")
+                    await self._durum_anlat(
+                        kullanici, yayin_durumu_metni(self.guild),
+                        "Yayin durumunu kisaca soyle. Birden fazla yayinci varsa hangisine "
+                        "odaklanacagini SOR. Yayinin goruntusunu gordugunu ASLA iddia etme.")
+
+                elif komut == "ara":
+                    sorgu = arg or ""
+                    print(f"[KOMUT] ara0 -> {sorgu!r}")
+                    if not sorgu:
+                        continue
+                    sonuc = await web_arastir_ve_anlat(sorgu, kullanici, self.guild)
+                    await _seslendir_ve_cal(self.vc, sonuc)
+
+            except Exception as e:
+                print(f"[KOMUT] '{komut}' calistirilamadi:", repr(e))
+                traceback.print_exc()
+
+        muzik_devam(self.vc)
+        return False
+
+    async def _durum_anlat(self, kullanici, durum_metni, yonerge):
+        """Kanal/yayin durumunu modele verip konusma diliyle soylettirir."""
+        try:
+            messages = [{"role": "user", "content": [{"type": "text", "text":
+                f"[Ses kanali bilgisi]\n{durum_metni}\n\n[Gorev] {yonerge}"}]}]
+            response, _f, token = await claude_cevapla(
+                messages, self.guild, kullanici, web_arama=False,
+                system=SYSTEM_PROMPT2, arac_kullan=False,
+            )
+            metin = extract_text(response) if response else ""
+            metin, _ = komutlari_ayikla(metin)
+            if metin:
+                await _seslendir_ve_cal(self.vc, metin)
+            limit_harca(getattr(kullanici, "id", None), token * TOKEN_MALIYETI)
+        except Exception as e:
+            print("[DURUM] anlatilamadi:", repr(e))
+
+    async def _cevapla(self, kullanici, metin, ek_baglam=""):
         self.mesgul = True
-        self.aktif_konusan = kullanici.id
+        self.aktif_konusan = getattr(kullanici, "id", None)
         try:
             (ai_text, yeni_kalan, limit, reset_at,
-             token, maliyet, hak_var) = await _sesli_cevap_uret(kullanici, metin, self.guild)
+             token, maliyet, hak_var) = await _sesli_cevap_uret(
+                kullanici, metin, self.guild, ek_baglam=ek_baglam)
 
             if not hak_var:
                 if os.path.exists(MP3_HAK_BITTI):
@@ -1098,18 +1449,20 @@ class VeritanSesMotoru:
                     await _seslendir_ve_cal(self.vc, "Hakkın bitti, üzgünüm.")
                 return
 
-            # --- Model cikmak istedigini (/exit0) ile bildirdi mi? ---
-            ai_text, cikacak = exit_isareti_ayikla(ai_text)
-            if cikacak:
-                print(f"[EXIT0] Model cikis istedi ({kullanici.display_name}) -> '{ai_text}'")
+            # --- Model etiketle is istedi mi? ---
+            ai_text, komutlar = komutlari_ayikla(ai_text)
+            if komutlar:
+                print(f"[KOMUT] Model istedi: {komutlar}")
 
             await _seslendir_ve_cal(self.vc, ai_text)
             await _ui_kart_gonder(kullanici, yeni_kalan, limit, reset_at, token, maliyet)
 
-            if cikacak:
-                # Konusma bitti; sesin son hecesi de calindiktan sonra kanaldan cik.
-                await _konusmayi_bitir_ve_ayril(self.vc, motor=self)
-                return
+            if komutlar:
+                cikildi = await self.komutlari_uygula(komutlar, kullanici)
+                if cikildi:
+                    return
+            else:
+                muzik_devam(self.vc)
 
         except Exception as e:
             print("[SES] cevap uretilemedi:", repr(e))
@@ -1118,6 +1471,87 @@ class VeritanSesMotoru:
             self.mesgul = False
             self.aktif_konusan = None
 
+    # ---------------- SESSİZ ÜYE DÜRTMESİ ----------------
+    async def sessizlik_bekcisi(self):
+        """
+        SESSIZ_DAKIKA boyunca konusmayan VEYA mikrofonu kapali olan kisiye
+        adiyla seslenip laf atar. Cumleyi model uretir, Fish Audio seslendirir.
+        """
+        await asyncio.sleep(20)
+        while self.calisiyor:
+            try:
+                await asyncio.sleep(SESSIZ_KONTROL_SN)
+                if not self.calisiyor or self.mesgul:
+                    continue
+                if self.vc is None or not self.vc.is_connected():
+                    continue
+
+                kanal = self.vc.channel
+                if kanal is None or len(getattr(kanal, "members", [])) <= 1:
+                    continue
+
+                simdi = datetime.now()
+                adaylar = []
+                for m in kanal.members:
+                    if bot.user and m.id == bot.user.id:
+                        continue
+                    vs = m.voice
+                    mikrofon_kapali = bool(vs and (vs.self_mute or vs.mute))
+                    son = self.son_konusma.get(m.id)
+                    suskun_dk = (simdi - son).total_seconds() / 60 if son else 999
+
+                    # ilk kez goruyorsak kayit at, hemen laf atma
+                    if son is None:
+                        self.son_konusma[m.id] = simdi
+                        continue
+
+                    if not (mikrofon_kapali or suskun_dk >= SESSIZ_DAKIKA):
+                        continue
+
+                    son_durtme = self.son_durtme.get(m.id)
+                    if son_durtme and (simdi - son_durtme).total_seconds() / 60 < SESSIZ_TEKRAR_DK:
+                        continue
+
+                    adaylar.append((m, mikrofon_kapali, suskun_dk))
+
+                if not adaylar:
+                    continue
+
+                hedef, mik_kapali, suskun_dk = random.choice(adaylar)
+                self.son_durtme[hedef.id] = simdi
+                print(f"[DURTME] {hedef.display_name} (mik_kapali={mik_kapali}, suskun={suskun_dk:.1f}dk)")
+
+                sebep = ("mikrofonu kapali" if mik_kapali
+                         else f"{int(min(suskun_dk, 99))} dakikadir hic konusmuyor")
+                gorev = (
+                    f"[Gorev] Ses kanalindaki '{hedef.display_name}' adli kisi {sebep}. "
+                    f"Ona ADIYLA seslenip tatli-sert, esprili bir laf at; neden sessiz oldugunu sor. "
+                    f"TEK cumle, kisa. Kirici olma, samimi ol. Etiket KOYMA."
+                )
+                await self._durtme_konus(gorev, hedef)
+
+            except Exception as e:
+                print("[DURTME] hata:", repr(e))
+
+    async def _durtme_konus(self, gorev, hedef):
+        self.mesgul = True
+        try:
+            messages = [{"role": "user", "content": [{"type": "text", "text":
+                f"[Ses kanali durumu]\n{kanal_durumu_metni(self.guild)}\n\n{gorev}"}]}]
+            response, _f, _t = await claude_cevapla(
+                messages, self.guild, hedef, web_arama=False,
+                system=SYSTEM_PROMPT2, arac_kullan=False,
+            )
+            metin = extract_text(response) if response else ""
+            metin, _ = komutlari_ayikla(metin)
+            if metin:
+                await _seslendir_ve_cal(self.vc, metin)
+                muzik_devam(self.vc)
+        except Exception as e:
+            print("[DURTME] konusulamadi:", repr(e))
+        finally:
+            self.mesgul = False
+
 
 # ---- Discord'dan ham PCM alan sink ----
 if VOICE_HAZIR:
@@ -1125,14 +1559,13 @@ if VOICE_HAZIR:
         def __init__(self, motor):
             super().__init__()
             self.motor = motor
-            self._ilk_ses_loglandi = set()   # user_id -> ilk ses geldi mi
+            self._ilk_ses_loglandi = set()
             self._paket_sayaci = {}
 
         def wants_opus(self) -> bool:
             return False  # PCM (48kHz stereo 16-bit)
 
         def write(self, user, data):
-            # TEŞHİS: write hic cagriliyor mu? (ilk birkac cagriyi mutlaka logla)
             try:
                 if not hasattr(self, "_write_log_n"):
                     self._write_log_n = 0
@@ -1145,7 +1578,6 @@ if VOICE_HAZIR:
 
             if user is None:
                 return
-            # user bazen SSRC (int) olabilir; User nesnesi degilse .id yoktur -> atla
             if not hasattr(user, "id"):
                 return
             try:
@@ -1160,11 +1592,13 @@ if VOICE_HAZIR:
 
             if user.id not in self._ilk_ses_loglandi:
                 self._ilk_ses_loglandi.add(user.id)
-                print(f"[SES][SINK] Ilk ses paketi geldi -> {getattr(user,'display_name',user.id)} ({user.id}), {len(pcm)} byte")
+                print(f"[SES][SINK] Ilk ses paketi geldi -> "
+                      f"{getattr(user,'display_name',user.id)} ({user.id}), {len(pcm)} byte")
 
             self._paket_sayaci[user.id] = self._paket_sayaci.get(user.id, 0) + 1
             if self._paket_sayaci[user.id] % 250 == 0:
-                print(f"[SES][SINK] {getattr(user,'display_name',user.id)}: {self._paket_sayaci[user.id]} paket")
+                print(f"[SES][SINK] {getattr(user,'display_name',user.id)}: "
+                      f"{self._paket_sayaci[user.id]} paket")
 
             oturum = self.motor.oturumlar.get(user.id)
             if oturum is None:
@@ -1173,6 +1607,28 @@ if VOICE_HAZIR:
 
         def cleanup(self):
             pass
+
+
+# ---- Yayin acilinca haberdar ol ----
+@bot.event
+async def on_voice_state_update(member, before, after):
+    try:
+        motor = getattr(bot, "_veritan_motor", None)
+        if motor is None or not motor.calisiyor:
+            return
+        if bot.user and member.id == bot.user.id:
+            return
+        vc = motor.vc
+        if vc is None or not vc.is_connected() or vc.channel is None:
+            return
+        if after.channel is None or after.channel.id != vc.channel.id:
+            return
+
+        if after.self_stream and not before.self_stream:
+            print(f"[YAYIN] {member.display_name} yayin acti")
+            motor.son_konusma.setdefault(member.id, datetime.now())
+    except Exception as e:
+        print("[YAYIN] durum guncellemesi hatasi:", repr(e))
 
 
 # ---- SESLİ KOMUTLAR ----
@@ -1198,10 +1654,11 @@ async def veritan_katil(interaction: discord.Interaction):
         try:
             kanal = await bot.fetch_channel(VOICE_CHANNEL_ID)
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Ses kanalı bulunamadı (ID: {VOICE_CHANNEL_ID}). `{e}`", ephemeral=True)
+            await interaction.followup.send(
+                f"⚠️ Ses kanalı bulunamadı (ID: {VOICE_CHANNEL_ID}). `{e}`", ephemeral=True)
             return
-    if not isinstance(kanal, discord.VoiceChannel):
-        await interaction.followup.send("⚠️ Verilen ID bir SES kanalı değil.", ephemeral=True)
+    if not isinstance(kanal, (discord.VoiceChannel, discord.StageChannel)):
+        await interaction.followup.send("⚠️ Verilen ID bir SES/SAHNE kanalı değil.", ephemeral=True)
         return
 
     if interaction.guild.voice_client and interaction.guild.voice_client.is_connected():
@@ -1215,9 +1672,9 @@ async def veritan_katil(interaction: discord.Interaction):
         bot._veritan_motor = motor
         print(f"[SES] Dinleme basladi -> {kanal.name} ({kanal.id})")
 
-        # Kanalda halihazirda olan (bot haric) herkes icin Deepgram oturumunu onden ac.
-        # ONEMLI: Deepgram start() SENKRON ve bloklayici -> ana event loop'ta CALISTIRMA,
-        # yoksa gateway heartbeat durur ("Shard stopped responding") ve komutlar 10062 verir.
+        # sessizlik bekcisini baslat
+        asyncio.create_task(motor.sessizlik_bekcisi())
+
         async def _onden_oturumlari_ac():
             try:
                 uyeler = [u for u in kanal.members if not (bot.user and u.id == bot.user.id)]
@@ -1227,13 +1684,13 @@ async def veritan_katil(interaction: discord.Interaction):
             except Exception as e:
                 print("[SES] Onden oturum acilamadi:", repr(e))
 
-        # Arka planda calistir; komut cevabini bekletme
         asyncio.create_task(_onden_oturumlari_ac())
 
         await interaction.followup.send(
-            f"✅ Veritan **{kanal.name}** kanalına girdi ve dinlemede. "
-            f"'veritan' de, seni dinlesin. 🎙️\n"
-            f"(Loglarda `[SES][SINK] Ilk ses paketi` görmüyorsan mikrofon sesi bota ulaşmıyor demektir.)",
+            f"✅ Veritan **{kanal.name}** kanalına girdi ve dinlemede. 🎙️\n"
+            f"Yapabildikleri: müzik çal/durdur, seste kim var söyler, kim yayın açmış söyler, "
+            f"internetten arayıp cevaplar, çık dediğinde çıkar. "
+            f"{SESSIZ_DAKIKA} dk susan veya mikrofonu kapalı olana adıyla laf atar.",
             ephemeral=True,
         )
     except Exception as e:
@@ -1252,8 +1709,10 @@ async def veritan_ayril(interaction: discord.Interaction):
         try:
             motor = getattr(bot, "_veritan_motor", None)
             if motor:
+                motor.calisiyor = False
                 for oturum in list(motor.oturumlar.values()):
                     oturum.kapat()
+            muzik_durdur(vc, kalici=True)
             await vc.disconnect()
         except Exception:
             pass
@@ -1261,12 +1720,49 @@ async def veritan_ayril(interaction: discord.Interaction):
     else:
         await interaction.followup.send("ℹ️ Veritan zaten ses kanalında değil.", ephemeral=True)
 
+
+@bot.tree.command(name="veritan_muzik", description="Ses kanalında müzik çalar (sesler/ klasöründen).")
+@app_commands.describe(parca="Parça adı (boş bırakırsan matrix çalar)")
+async def veritan_muzik(interaction: discord.Interaction, parca: str = ""):
+    await interaction.response.defer(ephemeral=True)
+    vc = (interaction.guild.voice_client if interaction.guild else None) or _bagli_ses_client()
+    if vc is None:
+        await interaction.followup.send("⚠️ Veritan ses kanalında değil.", ephemeral=True)
+        return
+    if muzik_baslat(vc, parca):
+        await interaction.followup.send(
+            f"🎵 Çalıyor: `{os.path.basename(_muzik_durum['calan'])}`", ephemeral=True)
+    else:
+        mevcut = []
+        if os.path.isdir(SES_KLASORU):
+            mevcut = [os.path.splitext(f)[0] for f in os.listdir(SES_KLASORU)
+                      if f.lower().endswith((".mp3", ".wav", ".ogg", ".m4a"))]
+        await interaction.followup.send(
+            f"⚠️ Parça bulunamadı. Mevcut parçalar: `{', '.join(mevcut) or 'yok'}`", ephemeral=True)
+
+
+@bot.tree.command(name="veritan_dur", description="Çalan müziği durdurur.")
+async def veritan_dur(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    vc = (interaction.guild.voice_client if interaction.guild else None) or _bagli_ses_client()
+    if vc is None:
+        await interaction.followup.send("⚠️ Veritan ses kanalında değil.", ephemeral=True)
+        return
+    muzik_durdur(vc, kalici=True)
+    await interaction.followup.send("⏹️ Müzik durduruldu.", ephemeral=True)
+
+
+@bot.tree.command(name="veritan_kimler", description="Ses kanalında kimler var, kim yayın açmış gösterir.")
+async def veritan_kimler(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    metin = kanal_durumu_metni(interaction.guild)
+    yayin = yayin_durumu_metni(interaction.guild)
+    await interaction.followup.send(f"```\n{metin}\n\n{yayin}\n```", ephemeral=True)
+
+
 # ==========================================================================
 # ===================  WEB SUNUCUSU (HTML KÖPRÜSÜ)  ========================
 # ==========================================================================
-# verity.html buraya baglanir: mikrofon -> Deepgram (tarayicida) -> yazi ->
-# buraya POST -> Claude -> Fish Audio -> Discord ses kanalinda calar. HARCAMA YOK.
-# Railway > Settings > Networking > Generate Domain acik olmali.
 
 from aiohttp import web as _web
 
@@ -1285,6 +1781,14 @@ def _bagli_ses_client():
         vc = g.voice_client
         if vc and vc.is_connected():
             return vc
+    return None
+
+
+def _bagli_guild():
+    for g in bot.guilds:
+        vc = g.voice_client
+        if vc and vc.is_connected():
+            return g
     return None
 
 
@@ -1327,36 +1831,78 @@ async def web_konus(request):
             {"ok": False, "hata": "Bot ses kanalinda degil. Once /veritan_katil calistir."},
             status=409))
 
+    guild = _bagli_guild()
+    motor = getattr(bot, "_veritan_motor", None)
+
     try:
-        messages = [{"role": "user", "content": [{"type": "text",
-            "text": f"[Ortam] Sesli sohbet. Kisinin soyledigi: {metin}"}]}]
+        baglam = (
+            f"[Ortam] Sesli sohbet (web mikrofonu uzerinden).\n"
+            f"[Ses kanali durumu]\n{kanal_durumu_metni(guild)}\n"
+        )
+        if _muzik_durum["istendi"]:
+            baglam += "[Muzik] Su an muzik caliyor.\n"
+        baglam += f"\nKisinin soyledigi: {metin}"
+
+        messages = [{"role": "user", "content": [{"type": "text", "text": baglam}]}]
+        # asker nesnesi yok -> uye arama araclari kapali (NoneType hatasini onler)
         response, _f, _t = await claude_cevapla(
-            messages, None, None, web_arama=False, system=SYSTEM_PROMPT2
+            messages, guild, None, web_arama=False,
+            system=SYSTEM_PROMPT2, arac_kullan=False,
         )
         ai_text = extract_text(response) if response else ""
         if not ai_text:
             ai_text = "Pardon, tekrar eder misin?"
 
-        # --- Model cikmak istedigini (/exit0) ile bildirdi mi? ---
-        ai_text, cikacak = exit_isareti_ayikla(ai_text)
-        print(f"[WEB] '{metin}' -> '{ai_text}'" + (" [EXIT0]" if cikacak else ""))
+        # --- Model etiketle is istedi mi? ---
+        ai_text, komutlar = komutlari_ayikla(ai_text)
+        print(f"[WEB] '{metin}' -> '{ai_text}'" + (f" {komutlar}" if komutlar else ""))
 
         await _seslendir_ve_cal(vc, ai_text)
 
-        if cikacak:
-            motor = getattr(bot, "_veritan_motor", None)
-            await _konusmayi_bitir_ve_ayril(vc, motor=motor)
-            return _cors(_web.json_response({"ok": True, "cevap": ai_text, "ayrildi": True}))
+        cikildi = False
+        if komutlar:
+            if motor is not None:
+                cikildi = await motor.komutlari_uygula(komutlar, None)
+            else:
+                for komut, arg in komutlar:
+                    if komut == "exit":
+                        await _konusmayi_bitir_ve_ayril(vc, motor=None)
+                        cikildi = True
+                    elif komut == "muzik":
+                        muzik_baslat(vc, arg)
+                    elif komut == "dur":
+                        muzik_durdur(vc, kalici=True)
+                    elif komut == "ara" and arg:
+                        sonuc = await web_arastir_ve_anlat(arg, None, guild)
+                        await _seslendir_ve_cal(vc, sonuc)
+        else:
+            muzik_devam(vc)
 
-        return _cors(_web.json_response({"ok": True, "cevap": ai_text}))
+        return _cors(_web.json_response({
+            "ok": True, "cevap": ai_text,
+            "komutlar": [k for k, _a in komutlar],
+            "ayrildi": cikildi,
+        }))
     except Exception as e:
         traceback.print_exc()
         return _cors(_web.json_response({"ok": False, "hata": str(e)}, status=500))
 
 
+async def web_durum(request):
+    """HTML tarafi isterse kanal durumunu cekebilsin."""
+    guild = _bagli_guild()
+    return _cors(_web.json_response({
+        "ok": True,
+        "kanal": kanal_durumu_metni(guild),
+        "yayin": yayin_durumu_metni(guild),
+        "muzik": bool(_muzik_durum["istendi"]),
+    }))
+
+
 async def _web_baslat():
     app = _web.Application()
     app.router.add_get("/", web_saglik)
+    app.router.add_get("/durum", web_durum)
     app.router.add_post("/konus", web_konus)
     app.router.add_post("/dinliyorum", web_dinliyorum)
     app.router.add_route("OPTIONS", "/konus", web_options)
@@ -1372,7 +1918,7 @@ bot.setup_hook = _web_baslat
 # ==========================================================================
 # mms
 MM_DUYURU_METNI = "[emphasis]Something Happen To Server In Three Days ... [long pause][emphasis] So Make New Server Vacant"
-_MM_SES_CACHE = {}   # metin -> mp3 bytes (ayni metin tekrar Fish Audio'ya gitmesin)
+_MM_SES_CACHE = {}
 
 
 async def _mm_ses_al(metin: str) -> bytes:
@@ -1380,7 +1926,6 @@ async def _mm_ses_al(metin: str) -> bytes:
         return _MM_SES_CACHE[metin]
     ses = await generate_fish_audio(metin)
     _MM_SES_CACHE[metin] = ses
-    # onbellek sinirsiz buyumesin
     if len(_MM_SES_CACHE) > 30:
         _MM_SES_CACHE.pop(next(iter(_MM_SES_CACHE)))
     return ses
@@ -1408,7 +1953,6 @@ async def mm_veritan1(
         )
         return
 
-    # Metin verilmediyse sabit duyuru
     soylenecek = (metin or "").strip() or MM_DUYURU_METNI
     if len(soylenecek) > 500:
         await interaction.followup.send(
@@ -1427,7 +1971,6 @@ async def mm_veritan1(
         )
         return
 
-    # Motor mesgul bayragini kaldir: duyuru sirasinda sesli mod araya girmesin
     motor = getattr(bot, "_veritan_motor", None)
     if motor is not None:
         motor.mesgul = True
@@ -1462,6 +2005,7 @@ async def mm_veritan1(
     finally:
         if motor is not None:
             motor.mesgul = False
+        muzik_devam(vc)
 # mmsa
 
 
@@ -1506,7 +2050,6 @@ async def elkaldirveritan(interaction: discord.Interaction):
         )
         return
 
-    # 1) Bot sahne moderatoruyse dogrudan konusmaci olabilir.
     try:
         await me.edit(suppress=False)
         print(f"[SAHNE] Dogrudan konusmaci olundu -> {kanal.name}")
@@ -1520,7 +2063,6 @@ async def elkaldirveritan(interaction: discord.Interaction):
     except Exception as e:
         print("[SAHNE] suppress=False denemesi basarisiz:", repr(e))
 
-    # 2) Yetki yoksa EL KALDIR (request to speak).
     try:
         await me.request_to_speak()
         print(f"[SAHNE] El kaldirildi -> {kanal.name}")
