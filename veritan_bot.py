@@ -2018,9 +2018,6 @@ class VeritanSesMotoru:
                 return
             if bot.user and hedef.id == bot.user.id:
                 return
-            if yetkili_mi(hedef):
-                await _seslendir_ve_cal(self.vc, "Sana bir sey yapmam patron ama sen de fazla gitme.")
-                return
             if not isinstance(hedef, discord.Member):
                 return
 
