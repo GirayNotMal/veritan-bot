@@ -576,6 +576,44 @@ _muzik_durum = {"calan": None, "istendi": False, "tur": None}
 
 
 # ==========================================================================
+# ==========================  KÜFÜR TESPİTİ  ===============================
+# ==========================================================================
+# Ses tanima her zaman etiket koydurmayabilir; bu yuzden gelen metinde
+# kufur/hakaret varsa modelden BAGIMSIZ olarak ceza tetiklenir.
+
+_KUFUR_KOKLERI = [
+    "amk", "aq", "amina", "amına", "ananı", "anani", "orospu", "oros",
+    "piç", "gavat", "kahpe", "yavşak", "yavsak", "siktir", "sikt",
+    "gotveren", "götveren", "ibne", "pezevenk", "şerefsiz", "serefsiz",
+    "puşt", "kaltak", "sürtük", "surtuk", "yarrak", "yarak",
+    "amcık", "amcik", "sokayım", "sokayim", "sikeyim", "sikim",
+    "dangalak", "gerizekal", "geri zekal", "gerzek", "embesil",
+    "beyinsiz", "denyo", "yavşa", "salak", "aptal", "gerizeka",
+    "mal mısın", "malsın", "salaksın", "aptalsın",
+]
+# Tam kelime aranir (icinde gecmesi yetmez)
+_KUFUR_TAM_KELIME = [
+    "mal", "göt", "got", "bok", "boktan", "oç", "amq", "sg", "mk",
+    "hıyar", "hiyar", "döl",
+]
+
+
+def kufur_var_mi(cumle: str) -> bool:
+    """Cumlede kufur/hakaret var mi?"""
+    if not cumle:
+        return False
+    d = cumle.lower().strip()
+    for kok in _KUFUR_KOKLERI:
+        if kok in d:
+            return True
+    kelimeler = re.findall(r"[a-zçğıöşü]+", d)
+    for k in _KUFUR_TAM_KELIME:
+        if k in kelimeler:
+            return True
+    return False
+
+
+# ==========================================================================
 # ==========================  DUYGU SİSTEMİ  ===============================
 # ==========================================================================
 # Veritan'in bir ruh hali var; zamanla degisir, olaylara tepki verir.
@@ -1797,6 +1835,29 @@ class VeritanSesMotoru:
         # Konusan kisi bile araya giremez; sozunu bitirene kadar tam sessizlik.
         if self.mesgul:
             print(f"[SES] KILITLI (mesgul), yok sayildi ({kullanici.display_name}): {cumle}")
+            return
+
+        # --- OTOMATİK CEZA: kufur varsa modele bagli kalmadan hemen cezalandir ---
+        # (Model bazen etiket koymuyor; boylece ceza GARANTI calisir.)
+        if KICK_ACIK and kufur_var_mi(cumle):
+            print(f"[CEZA] Kufur algilandi ({kullanici.display_name}): {cumle!r}")
+            self.mesgul = True
+            try:
+                ruh_hali_tetikle("kufur")
+                # once sert bir laf
+                sert = random.choice([
+                    "Sen kiminle konustugunu saniyorsun ya! Terbiyeni takin!",
+                    "Bana bak, agzini topla! Simdi gorursun sen!",
+                    "Kimsin sen ya, laf mi yetistiriyorsun bana! Yeter!",
+                    "Ooo, agzin cok bozuk senin! Al bakalim cezani!",
+                ])
+                await _seslendir_ve_cal(self.vc, sert)
+            except Exception as e:
+                print("[CEZA] sert laf hatasi:", repr(e))
+            finally:
+                self.mesgul = False
+            # cezayi uygula (mesgul disinda ki mute/kick sesi de calsin)
+            await self._kisiyi_at("", kullanici)
             return
 
         # --- MÜZİK ONAYI BEKLİYOR MU? ('bu şarkıyı çalayım mı' sonrasi) ---
