@@ -66,6 +66,7 @@ SAKA_KISI_TEKRAR_DK = 2              # ayni kisiye tekrar saka icin bekleme
 HAZIR_GENEL_ACIK = True
 HAZIR_GENEL_ARALIK_SN = 90           # 1 dakika 30 saniye
 HAZIR_GENEL_CUMLELER = [
+    "hahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahaua",
     "hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau",
     "Hello I'm Veritan! Your Personal Helper Nigger.",
     "aga kendimkiyle oynuyorum arada sırada hehe.",
