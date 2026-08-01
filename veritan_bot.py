@@ -70,10 +70,31 @@ HAZIR_GENEL_CUMLELER = [
     "hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau",
     "Hello I'm Veritan! Your Personal Helper Nigger.",
     "aga kendimkiyle oynuyorum arada sırada hehe.",
+    "aga kendimkiyle oynuyorum arada sırada hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau.",
+    "aga kendimkiyle oynuyorum arada sırada hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau.",
     "Sunucuya Üç Gün İçinde, Amı Götü Dağıtıcak, Verita'nın Mekanı Olucak! Hahahahaahhahah",
     "Otto.mp4 gel beraber oyun oynayak",
     "kendimi silkiyorum",
     "aga bana küfür eden olursa sikerim haberiniz olsun!",
+    "götüme çubuk soktum aga",
+    "AGALAR BEN ZENCIYIM HAHAHAHAHAHAHA",
+    "TUNG TUNG TUNG SAHUR MAY DIN DIN DUN HAUHAHAUAHUAUHAUAUHAUHAUHA BALARINA CAPUCINA YARRAK YARARK YARRAK HAHAAHAH",
+    "SIKILIYORUM YARDIM EDIN!!",
+    "hahuahahSASASauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahaua",
+    "hahuhahuhDSADSADaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau",
+    "aga yarağımla oynarken benim karizma",
+    "omsantuş sen osmantuşasdmusun hayır ben armut pişirip ağzıma düşürdüm hahaha",
+    "omsantuş sen osmantuşasdmusun hayır ben armut pişirip ağzıma düşürdüm hahaha",
+    "omsantuş sen osmantdasuşmusun hayır ben armut pişirip ağzıma düşürdüm hahaha",
+ "omsantuş sen osmantuşmusundsa hayır bdsaden armut pişirip ağzıma düşsaürdüm hahaha",
+ "omsantuş sen osmantsaduşmusun hayır ben armut pişirip ağzıma düşürdüm hahaha",
+    "Kanka sen götllük müsün yada void sana mı gülüoyr YYYAYAYRYARARKAK",
+        "TUNG TUNG TUNG SAHUR MAY DIN DIN DUN HAUHAHAUAHUAUHAUAUHAUHAUHA BALARINA CAPUCINA YARRAK YARARK YARRAK HAHAAHAH",
+    "TUNG TUNG TUNG SAHUR MAY DIN DIN DUN HAUHAHAUAHUAUHAUAUHAUHAUHA BALARINA CAPUCINA YARRAK YARARK YARRAK HAHAAHAH",
+    "TUNG TUNG TUNG SAHUR MAY DIN DIN DUN HAUHAHAUAHUAUHAUAUHAUHAUHA BALARINA CAPUCINA YARRAK YARARK YARRAK HAHAAHAH",
+
+        "TUNG TUNG TUNG SAHUR MAY DIN DIN DUN HAUHAHAUAHUAUHAUAUHAUHAUHA BALARINA CAPUCINA YARRAK YARARK YARRAK HAHAAHAH",
+
 ]
 
 # 2) KİŞİYE ÖZEL cumleler: her ~2.5 dakikada rastgele bir kisi secilir,
@@ -90,6 +111,8 @@ HAZIR_KISI_CUMLELER = [
     "aga bu seslide sevgilim var ve bu sevgilim seçiliyor!!!! hazırmısınız! [pause] 3 [pause] 2 [pause] 1 [pause] bu kişi: [MAN_NAME]",
     "[MAN_NAME] aga bu karadenizli gotik kızlara bakıp goonluyormusun?",
     "Merhaba Benim Adım [MAN_NAME]!",
+     "aga göt değilime birşey sıkıştı çıkarırmısın [MAN_NAME]!",
+     "BIR GUN SIYAHI OLUCAM VE ZENCI OLUCAM DUYDUNMU [MAN_NAME]!",
 ]
 # =========================================================================
 
