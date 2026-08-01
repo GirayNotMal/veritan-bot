@@ -28,13 +28,13 @@ WAKE_WORDS = ("veritan", "verity", "verisan", "veri tan", "verittan", "veri tang
 SES_KLASORU = "sesler"
 MP3_DINLIYORUM = os.path.join(SES_KLASORU, "dinliyorum.mp3")
 MP3_HAK_BITTI = os.path.join(SES_KLASORU, "hak_bitti.mp3")
-DINLEME_PENCERESI_SN = 15
+DINLEME_PENCERESI_SN = 1
 
 # ---- MÜZİK ----
 MUZIK_VARSAYILAN = "matrix"          # taban ad
 # "muzik cal" (isimsiz) deyince bunlardan rastgele biri calar:
 MUZIK_HAZIR_LISTE = ["matrix", "matrix1", "matrix2", "matrix3"]
-MUZIK_SES_SEVIYESI = 0.35            # konusma duyulsun diye kisik
+MUZIK_SES_SEVIYESI = 0.5            # konusma duyulsun diye kisik
 YTDLP_ACIK = True                    # internetten muzik (yt-dlp) kullanilsin mi
 MUZIK_MAX_SN = 420                   # internetten cekilen parca max suresi (guvenlik)
 
@@ -42,21 +42,55 @@ MUZIK_MAX_SN = 420                   # internetten cekilen parca max suresi (guv
 FAVORI_RESIM = os.path.join(SES_KLASORU, "agaresim.png")  # "en sevdigin resim" deyince
 
 # ---- SESSİZ ÜYE DÜRTMESİ ----
-SESSIZ_DAKIKA = 3                    # kac dakika susarsa/mikrofonu kapaliysa laf atsin
+SESSIZ_DAKIKA = 2                    # kac dakika susarsa/mikrofonu kapaliysa laf atsin
 SESSIZ_KONTROL_SN = 30               # kac saniyede bir kontrol
 SESSIZ_TEKRAR_DK = 10                # ayni kisiye tekrar laf atmadan once bekleme
 
 # ---- ARADA SIRADA HAL HATIR SORMA (muhabbet dürtmesi) ----
 MUHABBET_ACIK = True                 # arada bir kendiliginden laf atsin mi
-MUHABBET_MIN_DK = 6                  # en az bu kadar dakika gecmeden muhabbet baslatmaz
-MUHABBET_MAX_DK = 12                 # en fazla bu kadar dakikada bir muhabbet eder
-MUHABBET_KISI_TEKRAR_DK = 15         # ayni kisiyle tekrar muhabbet icin bekleme
+MUHABBET_MIN_DK = 1                  # en az bu kadar dakika gecmeden muhabbet baslatmaz
+MUHABBET_MAX_DK = 2                 # en fazla bu kadar dakikada bir muhabbet eder
+MUHABBET_KISI_TEKRAR_DK = 3         # ayni kisiyle tekrar muhabbet icin bekleme
 
 # ---- ŞAKA / KOMEDİ DÜRTMESİ (istenmeden rastgele espri) ----
 SAKA_ACIK = True                     # arada bir rastgele birine saka yapsin mi
-SAKA_MIN_DK = 2                      # en az bu kadar dakikada bir (istedin: ~2 dk)
-SAKA_MAX_DK = 4                      # en fazla bu kadar dakikada bir
-SAKA_KISI_TEKRAR_DK = 6              # ayni kisiye tekrar saka icin bekleme
+SAKA_MIN_DK = 1                      # en az bu kadar dakikada bir (istedin: ~2 dk)
+SAKA_MAX_DK = 2                      # en fazla bu kadar dakikada bir
+SAKA_KISI_TEKRAR_DK = 2              # ayni kisiye tekrar saka icin bekleme
+
+# ==========================================================================
+# ---- HAZIR CÜMLE SİSTEMİ (senin belirledigin cumleler) ----
+# ==========================================================================
+# 1) GENEL cumleler: her ~1.5 dakikada rastgele biri seslendirilir (kimseye
+#    ozel degil, oylesine laf). Buraya istedigin cumleleri ekle.
+HAZIR_GENEL_ACIK = True
+HAZIR_GENEL_ARALIK_SN = 90           # 1 dakika 30 saniye
+HAZIR_GENEL_CUMLELER = [
+    "hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau",
+    "Hello I'm Veritan! Your Personal Helper Nigger.",
+    "aga kendimkiyle oynuyorum arada sırada hehe.",
+    "Sunucuya Üç Gün İçinde, Amı Götü Dağıtıcak, Verita'nın Mekanı Olucak! Hahahahaahhahah",
+    "Otto.mp4 gel beraber oyun oynayak",
+    "kendimi silkiyorum",
+    "aga bana küfür eden olursa sikerim haberiniz olsun!",
+]
+
+# 2) KİŞİYE ÖZEL cumleler: her ~2.5 dakikada rastgele bir kisi secilir,
+#    listeden rastgele cumle secilir, icindeki [MAN_NAME] o kisinin adiyla
+#    degistirilir ve seslendirilir.
+HAZIR_KISI_ACIK = True
+HAZIR_KISI_ARALIK_SN = 100           # 2 dakika 30 saniye
+HAZIR_KISI_CUMLELER = [
+    "Kanka, [MAN_NAME] naber, nasılsın? iyi değilsen iyi olmaya çalış ben senin yanındayım .",
+    "[MAN_NAME], Kanka Sallıyormusun Kendinkini Yoksa Yokmu, Yoksa Geçmiş Olsun.",
+    "[MAN_NAME], Sesini Kapat Yoksa 3 Dakika İçerisinde Bir Yarrak Gelcek!!!!!",
+    "[MAN_NAME], Yayın Açta İzleyek nigga.",
+    "NEFES ALAMIYORUM YARDIM ET [MAN_NAME] VERTIANNNNNNNNNNN HAUAHUAHAU ĞĞAĞAGĞGĞAAĞGGĞGĞGĞ",
+    "aga bu seslide sevgilim var ve bu sevgilim seçiliyor!!!! hazırmısınız! [pause] 3 [pause] 2 [pause] 1 [pause] bu kişi: [MAN_NAME]",
+    "[MAN_NAME] aga bu karadenizli gotik kızlara bakıp goonluyormusun?",
+    "Merhaba Benim Adım [MAN_NAME]!",
+]
+# =========================================================================
 
 # ---- CEZA SİSTEMİ (uyarı → hapishane+timeout → kick) ----
 KICK_ACIK = True                     # kufur/hakaret olunca ceza versin mi
@@ -68,8 +102,8 @@ IHLAL_UNUT_DK = 30                   # bu kadar dakika sessiz kalirsa ihlal saya
 
 # ---- KORKUTMA (ciddi/tekinsiz mod) ----
 KORKUT_ACIK = True                   # arada bir ciddi sesle korkutucu sey desin mi
-KORKUT_MIN_DK = 12                   # en az bu kadar dakikada bir
-KORKUT_MAX_DK = 25                   # en fazla bu kadar dakikada bir
+KORKUT_MIN_DK = 2                   # en az bu kadar dakikada bir
+KORKUT_MAX_DK = 3                   # en fazla bu kadar dakikada bir
 # Fish Audio'da ciddi/tekinsiz ton icin kullanilacak etiketler:
 KORKUT_TON = "[whispering][fearful]"
 NORMAL_TON = "[laughs]"
@@ -645,6 +679,30 @@ def kufur_var_mi(cumle: str) -> bool:
     return False
 
 
+# --- ARKASINDAN KONUSMA / VERİTAN'I KÖTÜLEME TESPİTİ ---
+# "veritan salak", "verity çok kötü" gibi Veritan'i asagilayan ifadeler.
+_KOTULEME_KELIMELERI = [
+    "salak", "aptal", "gerizekal", "mal", "beyinsiz", "işe yaramaz", "ise yaramaz",
+    "berbat", "kötü", "kotu", "rezalet", "boktan", "saçma", "sacma", "gereksiz",
+    "aptalca", "salakça", "salakca", "beğenmedim", "begenmedim", "nefret",
+    "sinir bozucu", "iğrenç", "igrenc", "çöp", "cop ", "vasat", "kötüsün", "kotusun",
+]
+
+
+def veritan_kotuleme_mi(cumle: str) -> bool:
+    """
+    Cumle Veritan/Verity'yi kotuluyor mu? ('veritan salak', 'verity berbat')
+    Hem wake kelimesi hem kotuleyen bir kelime iceriyorsa True.
+    """
+    if not cumle:
+        return False
+    d = cumle.lower()
+    veritan_geciyor = any(w in d for w in ("veritan", "verity", "veri tan", "veridan"))
+    if not veritan_geciyor:
+        return False
+    return any(k in d for k in _KOTULEME_KELIMELERI)
+
+
 # ==========================================================================
 # ==========================  DUYGU SİSTEMİ  ===============================
 # ==========================================================================
@@ -1066,6 +1124,53 @@ def yayin_durumu_metni(guild=None) -> str:
 # ==========================================================================
 # ==============  DISCORD MESAJ ARAMA (sunucu kontrolu)  ===================
 # ==========================================================================
+
+async def _uye_cezalandir(hedef, saniye):
+    """
+    Bir uyeye ceza uygular. Sirayla dener, ilk tutani dondurur:
+      1) member.timeout(sure)  -> yeni discord.py
+      2) member.edit(timed_out_until=...) -> eski discord.py
+      3) member.edit(mute=True) -> server mute (sadece seste ise)
+    Doner: "timeout" | "mute" | None (hicbiri olmadi)
+    """
+    # --- 1) .timeout() metodu (yeni surum) ---
+    try:
+        if hasattr(hedef, "timeout"):
+            try:
+                await hedef.timeout(timedelta(seconds=saniye), reason="Veritan: ceza")
+                return "timeout"
+            except TypeError:
+                # bazi surumlerde imza farkli: timeout(until)
+                await hedef.timeout(discord.utils.utcnow() + timedelta(seconds=saniye),
+                                    reason="Veritan: ceza")
+                return "timeout"
+    except discord.Forbidden:
+        print("[CEZA] timeout() yetki yok")
+    except Exception as e:
+        print("[CEZA] timeout() hatasi:", repr(e))
+
+    # --- 2) edit(timed_out_until=...) (eski surum) ---
+    try:
+        bitis = discord.utils.utcnow() + timedelta(seconds=saniye)
+        await hedef.edit(timed_out_until=bitis, reason="Veritan: ceza")
+        return "timeout"
+    except discord.Forbidden:
+        print("[CEZA] edit(timed_out_until) yetki yok")
+    except Exception as e:
+        print("[CEZA] edit(timed_out_until) hatasi:", repr(e))
+
+    # --- 3) server mute (sadece kisi seste ise) ---
+    try:
+        if hedef.voice and hedef.voice.channel:
+            await hedef.edit(mute=True, reason="Veritan: ceza (mute)")
+            return "mute"
+    except discord.Forbidden:
+        print("[CEZA] server mute yetki yok")
+    except Exception as e:
+        print("[CEZA] server mute hatasi:", repr(e))
+
+    return None
+
 
 async def _favori_resim_gonder(guild, ses_kanali=False, yazili_kanal=None):
     """
@@ -1832,6 +1937,9 @@ class VeritanSesMotoru:
         self.son_korkut_an = datetime.now()
         self._korkut_hedef_dk = random.randint(KORKUT_MIN_DK, KORKUT_MAX_DK)
         self.ihlaller = {}   # user_id -> {"sayi": int, "son": datetime} (kufur takibi)
+        self.son_hazir_genel = datetime.now()
+        self.son_hazir_kisi = datetime.now()
+        self.sorgudaki = {}   # user_id -> {"an": datetime, "ne_dedi": str}  (sorguya cekilenler)
 
     def _wake_var_mi(self, cumle):
         dusuk = cumle.lower()
@@ -1870,8 +1978,33 @@ class VeritanSesMotoru:
             print(f"[SES] KILITLI (mesgul), yok sayildi ({kullanici.display_name}): {cumle}")
             return
 
-        # --- OTOMATİK CEZA: kufur varsa modele bagli kalmadan hemen cezalandir ---
-        # (Model bazen etiket koymuyor; boylece ceza GARANTI calisir.)
+        # --- SORGUYA ÇEKİLMİŞ Mİ? (arkasindan konusma sonrasi cevap) ---
+        if getattr(self, "sorgudaki", None) and kullanici.id in self.sorgudaki:
+            self.sorgudaki.pop(kullanici.id, None)
+            self.mesgul = True
+            try:
+                await self._sorgu_cevabi_degerlendir(kullanici, cumle)
+            except Exception as e:
+                print("[SORGU] cevap degerlendirme hatasi:", repr(e))
+            finally:
+                self.mesgul = False
+            return
+
+        # --- ARKASINDAN KONUŞMA: Veritan'i kotuluyor mu? (KÜFÜRDEN ÖNCE bakilir) ---
+        # "veritan salak" gibi -> ceza degil, SORGUYA cekilir.
+        if veritan_kotuleme_mi(cumle):
+            print(f"[SORGU] Kotuleme algilandi ({kullanici.display_name}): {cumle!r}")
+            self.mesgul = True
+            try:
+                await self._sorguya_cek(kullanici, cumle)
+            except Exception as e:
+                print("[SORGU] baslatma hatasi:", repr(e))
+            finally:
+                self.mesgul = False
+            return
+
+        # --- OTOMATİK CEZA: AĞIR kufur varsa hemen cezalandir ---
+        # (Model bagimsiz; boylece ceza GARANTI calisir.)
         if KICK_ACIK and kufur_var_mi(cumle):
             print(f"[CEZA] Kufur algilandi ({kullanici.display_name}): {cumle!r}")
             self.mesgul = True   # tum ceza sureci boyunca kilit acik kalsin
@@ -1884,7 +2017,6 @@ class VeritanSesMotoru:
                     "Ooo, agzin cok bozuk senin! Al bakalim cezani!",
                 ])
                 await _seslendir_ve_cal(self.vc, sert)
-                # cezayi uygula (hapishane/timeout/kick) - hala kilitliyken
                 await self._kisiyi_at("", kullanici)
             except Exception as e:
                 print("[CEZA] hata:", repr(e))
@@ -2182,15 +2314,20 @@ class VeritanSesMotoru:
             except Exception as e:
                 print("[HAPIS] tasima hatasi:", repr(e))
 
-        # 2) gercek Discord timeout uygula (1 dk, otomatik biter, zararsiz)
-        try:
-            bitis = discord.utils.utcnow() + timedelta(seconds=TIMEOUT_SANIYE)
-            await hedef.edit(timed_out_until=bitis, reason="Veritan: 1 dk susma cezasi")
-            print(f"[HAPIS] {hedef.display_name} {TIMEOUT_SANIYE}sn timeout")
-        except discord.Forbidden:
-            print("[HAPIS] timeout yetkisi yok (Moderate Members lazim)")
-        except Exception as e:
-            print("[HAPIS] timeout hatasi:", repr(e))
+        # 2) CEZA: once gercek Discord timeout dene, olmazsa server-mute.
+        ceza_uygulandi = _ceza_uygula_sonuc = None
+        ceza_uygulandi = await _uye_cezalandir(hedef, TIMEOUT_SANIYE)
+        if ceza_uygulandi == "timeout":
+            print(f"[HAPIS] {hedef.display_name} {TIMEOUT_SANIYE}sn TIMEOUT uygulandi")
+        elif ceza_uygulandi == "mute":
+            print(f"[HAPIS] {hedef.display_name} {TIMEOUT_SANIYE}sn server-MUTE uygulandi")
+            # mute'u sure sonra ac
+            asyncio.create_task(self._mute_ac_sonra(hedef, TIMEOUT_SANIYE))
+        else:
+            print("[HAPIS] CEZA UYGULANAMADI - yetki yok (Moderate Members + Mute Members lazim)")
+            await _seslendir_ve_cal(
+                self.vc, "Seni susturmak istiyorum ama yetkim yok! Birileri bana "
+                         "moderasyon izni versin de gorun gununuzu!")
 
         # 3) Veritan hapishaneye gidip konussun (tasindiysa)
         if tasindi and hapishane is not None and eski_kanal is not None:
@@ -2321,7 +2458,20 @@ class VeritanSesMotoru:
 
                 simdi = datetime.now()
 
-                # --- ŞAKA: ~2 dakikada bir rastgele birine espri/dalga ---
+                # --- HAZIR GENEL CÜMLE: her ~1.5 dk rastgele hazir cumle ---
+                if HAZIR_GENEL_ACIK and not self.mesgul and HAZIR_GENEL_CUMLELER:
+                    if (simdi - self.son_hazir_genel).total_seconds() >= HAZIR_GENEL_ARALIK_SN:
+                        await self._hazir_genel_soyle()
+                        self.son_hazir_genel = datetime.now()
+                        continue
+
+                # --- HAZIR KİŞİYE ÖZEL CÜMLE: her ~2.5 dk bir kisiye [MAN_NAME] ---
+                if HAZIR_KISI_ACIK and not self.mesgul and HAZIR_KISI_CUMLELER:
+                    if (simdi - self.son_hazir_kisi).total_seconds() >= HAZIR_KISI_ARALIK_SN:
+                        if await self._hazir_kisi_soyle(kanal):
+                            self.son_hazir_kisi = datetime.now()
+                            continue
+
                 # --- KORKUTMA: arada bir ciddi sesle tekinsiz sey soyle ---
                 if KORKUT_ACIK and not self.mesgul:
                     gecen = (simdi - self.son_korkut_an).total_seconds() / 60
@@ -2392,6 +2542,127 @@ class VeritanSesMotoru:
 
             except Exception as e:
                 print("[DURTME] hata:", repr(e))
+
+    async def _sorguya_cek(self, kullanici, ne_dedi):
+        """
+        Biri Veritan'i kotuledi -> sorguya cek. 'Niye boyle dedin' diye sor.
+        Kisi 3 dakika icinde cevap vermezse hapishaneye atilir (baska ceza yok).
+        """
+        ruh_hali_tetikle("kufur")
+        self.sorgudaki[kullanici.id] = {"an": datetime.now(), "ne_dedi": ne_dedi}
+        soru = random.choice([
+            f"Dur bakalım {kullanici.display_name}! Ne dedin sen şimdi? "
+            f"Arkamdan mı konuşuyorsun? Aç bakalım ağzını, niye böyle dedin?",
+            f"{kullanici.display_name}, bir dakika! Beni kötülediğini duydum. "
+            f"Hesabını ver bakalım, neden öyle dedin?",
+            f"Vayy {kullanici.display_name}! Sen beni çekiştiriyor musun? "
+            f"Hadi açıkla bakalım, niye yaptın bunu?",
+        ])
+        await _seslendir_ve_cal(self.vc, soru)
+        # 3 dakika sonra cevap gelmezse hapishane
+        asyncio.create_task(self._sorgu_zaman_asimi(kullanici))
+
+    async def _sorgu_zaman_asimi(self, kullanici):
+        """3 dakika cevap yoksa hapishaneye atar (sadece hapishane)."""
+        await asyncio.sleep(180)  # 3 dakika
+        kayit = self.sorgudaki.get(kullanici.id)
+        if not kayit:
+            return  # cevap vermis, sorgudan cikmis
+        # hala sorguda -> cevap vermedi -> hapishane
+        self.sorgudaki.pop(kullanici.id, None)
+        print(f"[SORGU] {kullanici.display_name} 3dk cevap vermedi -> hapishane")
+        while self.mesgul:
+            await asyncio.sleep(0.5)
+        self.mesgul = True
+        try:
+            await _seslendir_ve_cal(
+                self.vc, f"{kullanici.display_name}! İlk başta neden cevap vermedin ha? "
+                         f"Suçlusun demek ki. Yürü bakalım hapishaneye!")
+            hedef = self.guild.get_member(kullanici.id) if self.guild else None
+            if hedef:
+                await self._sadece_hapishaneye(hedef)
+        finally:
+            self.mesgul = False
+
+    async def _sorgu_cevabi_degerlendir(self, kullanici, cevap):
+        """Kisi sorguya cevap verdi -> modele degerlendirt, affet veya azarla."""
+        try:
+            baglam = (
+                f"{ruh_hali_metni()}\n"
+                f"[Durum] '{kullanici.display_name}' seni kotuledigi icin onu sorguya "
+                f"cektin. Simdi sana su cevabi verdi: '{cevap}'\n"
+                f"[Gorev] Cevabina gore tepki ver. Ikna edici/ozur diliyorsa bir "
+                f"parca yumusa ama gururunu koru. Hala saygisizsa fena azarla. "
+                f"Kisa konus, 1-2 cumle. Sesli okunacak."
+            )
+            messages = [{"role": "user", "content": [{"type": "text", "text": baglam}]}]
+            response, _f, _t = await claude_cevapla(
+                messages, self.guild, kullanici, web_arama=False,
+                system=SYSTEM_PROMPT2, arac_kullan=False)
+            metin = extract_text(response) if response else "Neyse, bu seferlik affettim."
+            metin, _ = komutlari_ayikla(metin)
+            await _seslendir_ve_cal(self.vc, metin)
+            muzik_devam(self.vc)
+        except Exception as e:
+            print("[SORGU] degerlendirme hatasi:", repr(e))
+
+    async def _sadece_hapishaneye(self, hedef):
+        """Sadece hapishane kanalina tasir (baska ceza yok)."""
+        hapishane = bot.get_channel(HAPISHANE_KANAL_ID)
+        if hapishane is None:
+            try:
+                hapishane = await bot.fetch_channel(HAPISHANE_KANAL_ID)
+            except Exception:
+                hapishane = None
+        if hapishane is None:
+            return
+        try:
+            if hedef.voice and hedef.voice.channel:
+                await hedef.move_to(hapishane, reason="Veritan: sorguya cevap vermedi")
+                print(f"[SORGU] {hedef.display_name} hapishaneye atildi")
+        except discord.Forbidden:
+            print("[SORGU] hapishane tasima yetkisi yok")
+            await _seslendir_ve_cal(self.vc, "Hapse atardim ama yetkim yok!")
+        except Exception as e:
+            print("[SORGU] hapishane hatasi:", repr(e))
+
+    async def _hazir_genel_soyle(self):
+        """Listeden rastgele bir GENEL hazir cumleyi Fish Audio ile seslendirir."""
+        self.mesgul = True
+        try:
+            cumle = random.choice(HAZIR_GENEL_CUMLELER)
+            print(f"[HAZIR-GENEL] {cumle!r}")
+            await _seslendir_ve_cal(self.vc, cumle)
+            muzik_devam(self.vc)
+        except Exception as e:
+            print("[HAZIR-GENEL] hata:", repr(e))
+        finally:
+            self.mesgul = False
+
+    async def _hazir_kisi_soyle(self, kanal):
+        """
+        Rastgele bir kisi secer, KİŞİYE ÖZEL hazir cumleden birini alir,
+        [MAN_NAME] yerine o kisinin adini koyar ve seslendirir.
+        rahatsiz-etme diyenleri atlar.
+        """
+        adaylar = [m for m in kanal.members
+                   if not (bot.user and m.id == bot.user.id) and not rahatsiz_etme_mi(m.id)]
+        if not adaylar:
+            return False
+        self.mesgul = True
+        try:
+            hedef = random.choice(adaylar)
+            cumle = random.choice(HAZIR_KISI_CUMLELER)
+            cumle = cumle.replace("[MAN_NAME]", hedef.display_name)
+            print(f"[HAZIR-KISI] -> {hedef.display_name}: {cumle!r}")
+            await _seslendir_ve_cal(self.vc, cumle)
+            muzik_devam(self.vc)
+            return True
+        except Exception as e:
+            print("[HAZIR-KISI] hata:", repr(e))
+            return False
+        finally:
+            self.mesgul = False
 
     async def _korkut(self, kanal):
         """
