@@ -54,9 +54,9 @@ MUHABBET_KISI_TEKRAR_DK = 3         # ayni kisiyle tekrar muhabbet icin bekleme
 
 # ---- ŞAKA / KOMEDİ DÜRTMESİ (istenmeden rastgele espri) ----
 SAKA_ACIK = True                     # arada bir rastgele birine saka yapsin mi
-SAKA_MIN_DK = 1                      # en az bu kadar dakikada bir (istedin: ~2 dk)
-SAKA_MAX_DK = 2                      # en fazla bu kadar dakikada bir
-SAKA_KISI_TEKRAR_DK = 2              # ayni kisiye tekrar saka icin bekleme
+SAKA_MIN_DK = 6                      # en az bu kadar dakikada bir (istedin: ~2 dk)
+SAKA_MAX_DK = 9                      # en fazla bu kadar dakikada bir
+SAKA_KISI_TEKRAR_DK = 10              # ayni kisiye tekrar saka icin bekleme
 
 # ==========================================================================
 # ---- HAZIR CÜMLE SİSTEMİ (senin belirledigin cumleler) ----
@@ -64,7 +64,7 @@ SAKA_KISI_TEKRAR_DK = 2              # ayni kisiye tekrar saka icin bekleme
 # 1) GENEL cumleler: her ~1.5 dakikada rastgele biri seslendirilir (kimseye
 #    ozel degil, oylesine laf). Buraya istedigin cumleleri ekle.
 HAZIR_GENEL_ACIK = True
-HAZIR_GENEL_ARALIK_SN = 90           # 1 dakika 30 saniye
+HAZIR_GENEL_ARALIK_SN = 490           # 1 dakika 30 saniye
 HAZIR_GENEL_CUMLELER = [
     "hahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahauahahuahahauhauhuahauhauhauahaua",
     "hahuhahuhaahuauhauhahuauhauhauhahuauhahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhauhahuahuhuahuahuuhauhauhauhauhauhahahuhahuhaahuauhauhahuauhauhauhahuauhauhuahhauuahhuauhauhahuauhau",
@@ -101,7 +101,7 @@ HAZIR_GENEL_CUMLELER = [
 #    listeden rastgele cumle secilir, icindeki [MAN_NAME] o kisinin adiyla
 #    degistirilir ve seslendirilir.
 HAZIR_KISI_ACIK = True
-HAZIR_KISI_ARALIK_SN = 100           # 2 dakika 30 saniye
+HAZIR_KISI_ARALIK_SN = 800           # 2 dakika 30 saniye
 HAZIR_KISI_CUMLELER = [
     "Kanka, [MAN_NAME] naber, nasılsın? iyi değilsen iyi olmaya çalış ben senin yanındayım .",
     "[MAN_NAME], Kanka Sallıyormusun Kendinkini Yoksa Yokmu, Yoksa Geçmiş Olsun.",
@@ -126,8 +126,8 @@ IHLAL_UNUT_DK = 30                   # bu kadar dakika sessiz kalirsa ihlal saya
 
 # ---- KORKUTMA (ciddi/tekinsiz mod) ----
 KORKUT_ACIK = True                   # arada bir ciddi sesle korkutucu sey desin mi
-KORKUT_MIN_DK = 2                   # en az bu kadar dakikada bir
-KORKUT_MAX_DK = 3                   # en fazla bu kadar dakikada bir
+KORKUT_MIN_DK = 8                   # en az bu kadar dakikada bir
+KORKUT_MAX_DK = 10                   # en fazla bu kadar dakikada bir
 # Fish Audio'da ciddi/tekinsiz ton icin kullanilacak etiketler:
 KORKUT_TON = "[whispering][fearful]"
 NORMAL_TON = "[laughs]"
@@ -262,7 +262,7 @@ SYSTEM_PROMPT_ARAMA = (
 )
 
 # ---- LİMİT AYARLARI (TOKEN BAZLI) ----
-DAILY_LIMIT = 10.0
+DAILY_LIMIT = 3.0
 TOKEN_MALIYETI = 0.01
 RESET_SAAT = 24
 LIMIT_FILE = "veritan_limits.json"
