@@ -130,7 +130,7 @@ KORKUT_MAX_DK = 10                   # en fazla bu kadar dakikada bir
 KORKUT_TON = "[whispering][fearful]"
 NORMAL_TON = "[laughs]"
 
-ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
+ANTHROPIC_MODEL = "claude-haiku-4-5"
 # >>> UI KANALI SABİT <<<
 UI_CHANNEL_ID = 1543323368822931506
 
