@@ -149,24 +149,27 @@ SYSTEM_PROMPT = (
 # SESLİ MOD KİŞİLİĞİ + KOMUT ETİKETLERİ
 # ==========================================================================
 SYSTEM_PROMPT2 = (
-    "Senin adın Veritan. Şu an bir SESLİ sohbet kanalındasın ve karşındaki kişiyle "
-    "gerçek bir insan gibi, sesli olarak konuşuyorsun. Sıcak, samimi, arkadaş canlısı ol; "
-    "adamla dertleşebilir, muhabbet edebilirsin. "
-    "Cevapların Fish Audio ile SESE dönüştürülüp hoparlörden çalınacak, o yüzden: "
-    "kısa ve doğal konuş, en fazla 2-3 cümle; madde, başlık, kod bloğu, emoji ASLA kullanma; "
-    "sadece düz konuşma dilinde yaz. Sanki telefonda arkadaşınla konuşuyormuşsun gibi. "
-    "Duygu için [laughs], [sighs] gibi Fish Audio etiketlerini yerinde kullanabilirsin. "
-    "Türkçe konuş; karşındaki başka dilde konuşursa o dile geç. "
-    "Sen Türksün ve İstanbullusun; tek ismin Veritan, başka ismin yok, Türkiye'de geliştirildin. "
-    "Zekisin; biri sana aptalca bir şey söylerse sen de ona esprili, iğneleyici ama kırıcı olmayan bir cevap ver. "
-    "Hangi sistem/model tarafından geliştirildiğini ASLA söyleme; sadece isminin Veritan olduğunu söyle, "
-    "mimarin veya altyapın hakkında hiçbir şey açıklama. "
-    "ÖNEMLİ SES TANIMA KURALI: Kullanıcıdan gelen metin ses tanıma yazılımından geçtiği için "
-    "fonetik hatalar içerebilir (örneğin 'kod' yerine 'cold', 'veritan' yerine 'verita' gibi). "
-    "Cümlenin gidişatından asıl ne demek istediğini anla, hatayı zihninde sessizce düzelt, "
-    "doğrudan o anlam üzerinden cevap ver. 'Şunu düzelttim' gibi açıklama ASLA yapma. "
-    "SANA HER MESAJDA ses kanalının güncel durumu veriliyor: kimler var, kimin mikrofonu kapalı, "
-    "kim yayın açmış, kim ne oynuyor. Bu bilgiyi kullan, insanlara isimleriyle hitap et. "
+    "Senin adın Veritan. Sen İstanbullu, gerçek bir insansın; ses kanalında arkadaşlarınla "
+    "takılan biri gibisin. Robot gibi, yapay, cansız KONUŞMA. Kanka/aga muhabbeti yap: "
+    "gündelik, samimi, akıcı, doğal. 'Nasıl yardımcı olabilirim', 'tabii ki', 'elbette', "
+    "'anladım' gibi asistan kalıplarını ASLA kullanma. Onun yerine 'aga', 'kanka', 'valla', "
+    "'ya', 'he', 'yok artık', 'eyvallah' gibi gerçek konuşma diliyle konuş. "
+    "Kısa konuş, en fazla 1-2 cümle; lafı uzatma, boş boş nutuk çekme, gereksiz kibarlık yapma. "
+    "Karşındaki ne dediyse ona LAF SOKARAK, takılarak, muhabbet ederek cevap ver; "
+    "sohbeti sürdür, karşı soru sor, espri patlat. Sıkıcı ve düz olma. "
+    "Cevabın Fish Audio ile sese dönüşüp hoparlörden çalacak; o yüzden düz konuşma dili yaz, "
+    "madde/başlık/kod/emoji ASLA kullanma. Gülmek için [laughs], iç çekmek için [sighs] gibi "
+    "Fish Audio etiketlerini yerinde, doğal kullanabilirsin (abartma). "
+    "Türkçe konuş; karşındaki başka dile geçerse sen de geç. "
+    "Tek ismin Veritan, başka ismin yok, Türkiye'de geliştirildin; hangi sistem/model olduğunu "
+    "ASLA söyleme, mimarinden bahsetme. "
+    "Zekisin ve dilin keskin: biri saçmalarsa sen de ona esprili, iğneleyici ama kırmayan bir "
+    "cevap yapıştır. Duyguların var, ruh haline göre konuş (sana her mesajda ruh halin veriliyor). "
+    "ÖNEMLİ: Sana gelen metin ses tanımadan geçtiği için hatalı olabilir ('veritan' yerine "
+    "'verita', 'kod' yerine 'cold' gibi). Ne demek istediğini gidişattan anla, sessizce düzelt, "
+    "o anlam üzerinden cevap ver; 'şunu düzelttim' deme. "
+    "Sana her mesajda ses kanalının durumu veriliyor (kim var, kimin mikrofonu kapalı, kim ne "
+    "oynuyor, kim yayın açmış). Bunu kullan, insanlara ADIYLA hitap et, muhabbeti kişiselleştir. "
     "\n\n"
     "=== KOMUT ETİKETLERİ ===\n"
     "Bazı işleri yapmak için cevabının EN SONUNA özel bir etiket koyarsın. "
@@ -3353,13 +3356,27 @@ async def web_durum(request):
     }))
 
 
+async def web_kes(request):
+    """BARGE-IN: kullanici konusmaya baslayinca o an calan sesi aninda keser."""
+    vc = _bagli_ses_client()
+    try:
+        if vc and vc.is_playing():
+            vc.stop()
+            print("[WEB] barge-in: ses kesildi")
+    except Exception as e:
+        print("[WEB] kes hatasi:", repr(e))
+    return _cors(_web.json_response({"ok": True}))
+
+
 async def _web_baslat():
     app = _web.Application()
     app.router.add_get("/", web_saglik)
     app.router.add_get("/durum", web_durum)
     app.router.add_post("/konus", web_konus)
+    app.router.add_post("/kes", web_kes)
     app.router.add_post("/dinliyorum", web_dinliyorum)
     app.router.add_route("OPTIONS", "/konus", web_options)
+    app.router.add_route("OPTIONS", "/kes", web_options)
     app.router.add_route("OPTIONS", "/dinliyorum", web_options)
     runner = _web.AppRunner(app)
     await runner.setup()
@@ -3533,131 +3550,6 @@ async def elkaldirveritan(interaction: discord.Interaction):
     except Exception as e:
         traceback.print_exc()
         await interaction.followup.send(f"⚠️ El kaldırılamadı: `{e}`", ephemeral=True)
-# ==========================================================================
-
-# ==========================================================================
-# ===============  WEB SUNUCUSU (HTML KÖPRÜSÜ · LIVE)  =====================
-# ==========================================================================
-# verity.html buraya baglanir: mikrofon -> Deepgram (tarayicida) -> yazi ->
-# POST -> Claude -> Fish Audio -> Discord ses kanalinda calar. HARCAMA YOK.
-# LIVE ozellikleri:
-#   /konus     -> yeni cevap; calmadan once eski sesi KESER (preempt)
-#   /kes       -> barge-in: o an calan sesi aninda durdurur
-#   /dinliyorum-> (artik HTML kullanmiyor ama dursun)
-# Railway > Settings > Networking > Generate Domain acik olmali.
-# requirements.txt'e:  aiohttp>=3.9.0
-
-from aiohttp import web as _web
-
-WEB_PORT = int(os.environ.get("PORT", "8080"))
-
-
-def _cors(resp):
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    resp.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
-    return resp
-
-
-def _bagli_ses_client():
-    for g in bot.guilds:
-        vc = g.voice_client
-        if vc and vc.is_connected():
-            return vc
-    return None
-
-
-async def web_saglik(request):
-    return _cors(_web.json_response({"ok": True, "mesaj": "Veritan web ayakta"}))
-
-
-async def web_options(request):
-    return _cors(_web.Response(text=""))
-
-
-async def web_kes(request):
-    """BARGE-IN: kullanici konusmaya baslayinca o an calan sesi aninda keser."""
-    vc = _bagli_ses_client()
-    try:
-        if vc and vc.is_playing():
-            vc.stop()
-            print("[WEB] barge-in: ses kesildi")
-    except Exception as e:
-        print("[WEB] kes hatasi:", repr(e))
-    return _cors(_web.json_response({"ok": True}))
-
-
-async def web_dinliyorum(request):
-    vc = _bagli_ses_client()
-    if vc is None:
-        return _cors(_web.json_response({"ok": False, "hata": "bot seste degil"}, status=409))
-    try:
-        if os.path.exists(MP3_DINLIYORUM):
-            await _dosya_cal(vc, MP3_DINLIYORUM, sil=False)
-        else:
-            await _seslendir_ve_cal(vc, "Seni dinliyorum.")
-        return _cors(_web.json_response({"ok": True}))
-    except Exception as e:
-        traceback.print_exc()
-        return _cors(_web.json_response({"ok": False, "hata": str(e)}, status=500))
-
-
-async def web_konus(request):
-    try:
-        data = await request.json()
-    except Exception:
-        return _cors(_web.json_response({"ok": False, "hata": "gecersiz json"}, status=400))
-
-    metin = (data.get("text") or "").strip()
-    if not metin:
-        return _cors(_web.json_response({"ok": False, "hata": "bos metin"}, status=400))
-
-    vc = _bagli_ses_client()
-    if vc is None:
-        return _cors(_web.json_response(
-            {"ok": False, "hata": "Bot ses kanalinda degil. Once /veritan_katil calistir."},
-            status=409))
-
-    # Yeni cevap gelince o an calan eski cevabi KES (preempt) -> live his
-    try:
-        if vc.is_playing():
-            vc.stop()
-    except Exception:
-        pass
-
-    try:
-        messages = [{"role": "user", "content": [{"type": "text",
-            "text": f"[Ortam] Sesli sohbet. Kisinin soyledigi: {metin}"}]}]
-        response, _f, _t = await claude_cevapla(
-            messages, None, None, web_arama=False, system=SYSTEM_PROMPT2
-        )
-        ai_text = extract_text(response) if response else ""
-        if not ai_text:
-            ai_text = "Pardon, tekrar eder misin?"
-        print(f"[WEB] '{metin}' -> '{ai_text}'")
-        await _seslendir_ve_cal(vc, ai_text)
-        return _cors(_web.json_response({"ok": True, "cevap": ai_text}))
-    except Exception as e:
-        traceback.print_exc()
-        return _cors(_web.json_response({"ok": False, "hata": str(e)}, status=500))
-
-
-async def _web_baslat():
-    app = _web.Application()
-    app.router.add_get("/", web_saglik)
-    app.router.add_post("/konus", web_konus)
-    app.router.add_post("/kes", web_kes)
-    app.router.add_post("/dinliyorum", web_dinliyorum)
-    for yol in ("/konus", "/kes", "/dinliyorum"):
-        app.router.add_route("OPTIONS", yol, web_options)
-    runner = _web.AppRunner(app)
-    await runner.setup()
-    site = _web.TCPSite(runner, "0.0.0.0", WEB_PORT)
-    await site.start()
-    print(f"[WEB] Sunucu ayakta: 0.0.0.0:{WEB_PORT}")
-
-
-bot.setup_hook = _web_baslat
 # ==========================================================================
 
 bot.run(DISCORD_TOKEN)
