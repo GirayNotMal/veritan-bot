@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 # Ses icin gerekli sistem paketleri (FFmpeg + opus)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     ffmpeg \
     libopus0 \
     libopus-dev \
